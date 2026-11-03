@@ -83,7 +83,8 @@ def _tables(kn: dict) -> dict:
     dq_view["expected"] = dq_view["expected"].map(lambda v: "" if pd.isna(v) else f"{v:,.0f}")
     opts = _load("business_options")
     opts_view = opts[["option", "what_changes", "fte", "one_off_cost_eur", "annual_cost_change_eur",
-                      "response_sl", "response_sl_with_email_alert"]]
+                      "first_year_cost_eur", "response_sl", "response_sl_sum"]].rename(columns={
+        "response_sl": "response SLA (optimistic)", "response_sl_sum": "response SLA (conservative)"})
     roster = _load("staff_roster_table_proposed")
     today = _load("staff_roster_table_by_day")
     auto = _load("automation_summary")
@@ -91,11 +92,17 @@ def _tables(kn: dict) -> dict:
     decomp = _load("kpi_rca_decomposition").query("sla_type == 'resolution' and comparison == 'Q1 -> Q4'")
     decomp = decomp.groupby("dimension")[["mix_effect", "rate_effect"]].sum().reset_index()
     decomp["total_change"] = decomp["mix_effect"] + decomp["rate_effect"]
-    reps = _load("staff_replications").pivot(index="replication", columns="roster", values="response_sl").reset_index()
+    r = _load("staff_replications")
+    reps = r.pivot(index="replication", columns="roster", values="response_sl")
+    reps_sum = r.pivot(index="replication", columns="roster", values="response_sl_sum")
+    reps = reps.join(reps_sum, rsuffix=" (cons.)")
+    reps.columns = [c if c.endswith("(cons.)") else f"{c} (opt.)" for c in reps.columns]
+    reps = reps.reset_index()
     return {
         "dq": _table(dq_view),
         "options": _table(opts_view, {"one_off_cost_eur": "€{:,.0f}", "annual_cost_change_eur": "€{:,.0f}",
-                                      "response_sl": "{:.1%}", "response_sl_with_email_alert": "{:.1%}"}),
+                                      "first_year_cost_eur": "€{:,.0f}", "response SLA (optimistic)": "{:.1%}",
+                                      "response SLA (conservative)": "{:.1%}"}),
         "roster_proposed": _table(roster),
         "roster_today": _table(today),
         "automation": _table(auto, {"deflected_share_of_tickets": "{:.1%}", "real_tickets_deflected_2023": "{:,.0f}",

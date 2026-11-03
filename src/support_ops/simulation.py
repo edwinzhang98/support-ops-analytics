@@ -228,7 +228,8 @@ def simulate_blended(arrival_s, service_s, is_live, servers_by_hour,
             if idle_agents:
                 begin(idle_agents.pop(), j, t)
             elif live[j] and async_agents:
-                ag = min(async_agents)           # preempt an agent doing async work
+                staying = [a for a in async_agents if not leaving[a]]
+                ag = min(staying) if staying else min(async_agents)   # preempt an agent doing async work
                 k = job[ag]
                 remaining[k] -= t - seg_start[ag]
                 async_q.appendleft(k)
@@ -278,10 +279,12 @@ def summarize_response(items: pd.DataFrame, wait_s: np.ndarray,
     pickup_delay   : the real first-response delay of the bootstrapped seed ticket. At the
                      export's volume nobody queues, so this measures how fast agents pick
                      work up when they are free (process component)
-    response_min   : the LATER of the two. If every agent is busy, the ticket waits for one
-                     and is taken as soon as one frees up; if an agent is free, the observed
-                     pickup behaviour applies. So a ticket is on time only if an agent was
-                     free in time AND it was picked up in time.
+    response_min   : the LATER of the two (optimistic bound: waiting for an agent and slow pickup
+                     overlap, so a ticket is on time if an agent was free in time AND it was
+                     picked up in time). response_met_sum uses the SUM (conservative bound: the
+                     two delays add up). The export's on-time response times are spread evenly
+                     inside the target window, so the sum rule pushes many of them over the line;
+                     the truth lies between the two.
     Tickets never touched in the seed (still Open, no response) count as breached.
     """
     first = items["kind"].isin(["live_first", "email_first"]).to_numpy()
@@ -297,6 +300,7 @@ def summarize_response(items: pd.DataFrame, wait_s: np.ndarray,
     pickup = df["pickup_delay_min"].fillna(np.inf)
     df["queue_met"] = df["queue_wait_min"] <= df["response_target_min"]
     df["process_met"] = pickup <= df["response_target_min"]
-    df["response_min"] = np.maximum(pickup, df["queue_wait_min"])
+    df["response_min"] = np.maximum(pickup, df["queue_wait_min"])          # optimistic bound
     df["response_met"] = df["response_min"] <= df["response_target_min"]
+    df["response_met_sum"] = (pickup + df["queue_wait_min"]) <= df["response_target_min"]   # conservative bound
     return df

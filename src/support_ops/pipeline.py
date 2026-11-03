@@ -98,6 +98,10 @@ def run(verbose: bool = True) -> dict:
     _save("staff_sim_response", cp["sim_response"])
     for name in ["proposed", "by_day", "flat", "business_hours"]:
         _save(f"staff_roster_table_{name}", cp[f"roster_table_{name}"])
+    # stress test of the weekend-workload assumption: follow-ups that land at weekends wait until Monday
+    cp_wd = staffing.capacity_plan(tickets, cfg, follow_up_timing="weekdays")
+    _save("staff_sim_summary_deferred", cp_wd["sim_summary"])
+    _save("staff_hire_options_deferred", cp_wd["hire_options"])
     _save("synth_tickets", tickets)
     _save("synth_work_items", items)
     log(f"capacity plan: {cp['fte_current']} FTE; rosters simulated: {len(cp['sim_summary'])}")
@@ -130,13 +134,13 @@ def run(verbose: bool = True) -> dict:
     log("automation + growth + replications done")
 
     # 8. business case -------------------------------------------------------------------
-    opts = business_case.options(cp, auto, tickets, items, cfg, alert)
+    opts = business_case.options(cp, auto, tickets, items, cfg)
     _save("business_options", opts)
     log("business case done")
 
     # 9. key numbers -------------------------------------------------------------------
     kn = key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_late, stale, weekend,
-                     recov, tickets, calib, cp, sens, auto, growth, opts, reps)
+                     recov, tickets, calib, cp, sens, auto, growth, opts, reps, cp_wd)
     with open(reports_path("key_numbers.json"), "w") as fh:
         json.dump(kn, fh, indent=2, default=float)
     log(f"key numbers written ({len(kn)} values)")
@@ -148,7 +152,7 @@ def _r(x, d=4):
 
 
 def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_late, stale, weekend, recov,
-                tickets, calib, cp, sens, auto, growth, opts, reps) -> dict:
+                tickets, calib, cp, sens, auto, growth, opts, reps, cp_wd) -> dict:
     m = k["kpi_monthly"]
     bd = k["kpi_by_dimension"].set_index(["dimension", "segment"])
     q = bd.loc["quarter"]
@@ -165,11 +169,22 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
     g_base = growth[growth.deflection == "base"].set_index("volume_factor")
     floor = float(sim.loc["proposed", "process_sl"])
 
+    st_cfg = cfg["staffing"]
+
     def holds(g):
-        """Largest growth at which SLA stays within 1 point of that year's process ceiling."""
-        ok = (g["response_sl"] >= g["process_sl"] - 0.01).to_numpy()
-        n_ok = int(np.argmin(ok)) if not ok.all() else len(ok)
-        return float(g.index[n_ok - 1] - 1) if n_ok else 0.0
+        """Largest tested volume growth at which the roster still meets the staffing goal:
+        queue on-time >= SL goal and agent utilisation <= max occupancy. Returns (growth, capped)."""
+        ok = ((g["queue_sl"] >= st_cfg["sl_goal"]) & (g["utilisation"] <= st_cfg["max_occupancy"])).to_numpy()
+        n_ok = len(ok) if ok.all() else int(np.argmin(ok))
+        return (float(g.index[n_ok - 1] - 1) if n_ok else 0.0), bool(ok.all())
+
+    h_none, h_none_capped = holds(g_none)
+    h_base, h_base_capped = holds(g_base)
+    sim_wd = cp_wd["sim_summary"].set_index("roster")
+    hire_wd = cp_wd["hire_options"].set_index("hypothesis")
+    late_tbl = fct[(fct["channel"] == "Email") & (fct["response_sla_met"] == False)]  # noqa: E712
+    late_min = late_tbl["frt_min"] - late_tbl["response_target_min"]
+    days_window = (fct["created_date"].max() - fct["created_date"].min()).days + 1
 
     kn = {
         # --- data -----------------------------------------------------------------
@@ -178,7 +193,8 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "real_last_created": str(fct["created_at"].max())[:10],
         "real_snapshot": str(fct["snapshot_at"].iloc[0])[:16],
         "real_agents": int(fct["agent_name"].nunique()),
-        "real_tickets_per_day": _r(len(fct) / fct["created_date"].nunique(), 2),
+        "real_tickets_per_day": _r(len(fct) / days_window, 2),
+        "real_days_in_window": int(days_window),
         "real_weekday_tickets_per_day": _r(np.mean([calib["daily_rate_by_weekday"][d] for d in range(1, 6)]), 2),
         "real_weekend_tickets_per_day": _r(np.mean([calib["daily_rate_by_weekday"][d] for d in (6, 7)]), 2),
         "dq_checks_total": int(len(dq)),
@@ -209,6 +225,7 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "channel_share_phone": _r(bd.loc[("channel", "Phone"), "share_of_tickets"]),
         # --- SLA attainment ------------------------------------------------------------------
         "response_sla_2023": _r(fct["response_sla_met"].mean()),
+        "response_evaluable": int(fct["response_sla_met"].notna().sum()),
         "resolution_sla_2023": _r(fct["resolution_sla_met"].mean()),
         "response_sla_raw_flag_2023": _r((fct["response_sla_flag_raw"] == "Within SLA").mean()),
         "response_sla_q1": _r(q.loc["Q1", "response_attainment"]), "response_sla_q4": _r(q.loc["Q4", "response_attainment"]),
@@ -288,7 +305,7 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "csat_met": _r(fct.loc[fct.resolution_sla_met, "csat_score"].mean(), 2),
         # --- synthetic + staffing ---------------------------------------------------------------
         "synth_scale_factor": cfg["scenario"]["scale_factor"],
-        "synth_tickets": int(len(tickets)), "synth_tickets_per_day": _r(len(tickets) / 360, 1),
+        "synth_tickets": int(len(tickets)), "synth_tickets_per_day": _r(len(tickets) / 365, 1),
         "synth_work_items": int(len(cp["items"])),
         "synth_workload_min_per_ticket": _r(cp["items"]["service_s"].sum() / 60 / len(tickets), 1),
         "synth_max_mix_gap_pp": None,   # filled below
@@ -314,6 +331,31 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "staff_hours_under_today_by_day": int(hire.loc["by_day", "hours_under_covered_today"]),
         "staff_hours_under_today_business_hours": int(hire.loc["business_hours", "hours_under_covered_today"]),
         "staff_hire_extra_fte_by_day": int(hire.loc["by_day", "extra_fte"]),
+        "staff_hire_extra_shifts_by_day": int(hire.loc["by_day", "extra_weekly_shifts"]),
+        "staff_hire_extra_fte_equiv_by_day": _r(hire.loc["by_day", "extra_fte_equivalent"], 1),
+        "staff_fte_continuous": _r(cp["fte_continuous"], 1),
+        "staff_sl_sum_today_by_day": _r(sim.loc["by_day", "response_sl_sum"]),
+        "staff_sl_sum_today_flat": _r(sim.loc["flat", "response_sl_sum"]),
+        "staff_sl_sum_today_business_hours": _r(sim.loc["business_hours", "response_sl_sum"]),
+        "staff_sl_sum_proposed": _r(sim.loc["proposed", "response_sl_sum"]),
+        "staff_sl_sum_hire_by_day": _r(sim.loc["hire_by_day", "response_sl_sum"]),
+        "staff_gain_pp_vs_by_day_sum": _r(100 * (sim.loc["proposed", "response_sl_sum"]
+                                                 - sim.loc["by_day", "response_sl_sum"]), 2),
+        "staff_hire_minus_reroster_pp": _r(100 * (sim.loc["hire_by_day", "response_sl"]
+                                                  - sim.loc["proposed", "response_sl"]), 2),
+        "staff_hire_minus_reroster_pp_sum": _r(100 * (sim.loc["hire_by_day", "response_sl_sum"]
+                                                      - sim.loc["proposed", "response_sl_sum"]), 2),
+        "staff_hours_under_today_flat": int(hire.loc["flat", "hours_under_covered_today"]),
+        "deferred_fte": int(cp_wd["fte_current"]),
+        "deferred_sl_today_by_day": _r(sim_wd.loc["by_day", "response_sl"]),
+        "deferred_sl_proposed": _r(sim_wd.loc["proposed", "response_sl"]),
+        "deferred_gain_pp_vs_by_day": _r(100 * (sim_wd.loc["proposed", "response_sl"]
+                                                - sim_wd.loc["by_day", "response_sl"]), 2),
+        "deferred_gain_pp_vs_by_day_sum": _r(100 * (sim_wd.loc["proposed", "response_sl_sum"]
+                                                    - sim_wd.loc["by_day", "response_sl_sum"]), 2),
+        "deferred_hours_under_today_by_day": int(hire_wd.loc["by_day", "hours_under_covered_today"]),
+        "email_breach_near_miss_share": _r(((late_min > 0) & (late_min <= 60)).sum() / len(late_tbl)),
+        "email_breach_never_answered": int(late_tbl["frt_min"].isna().sum()),
         "staff_hire_extra_fte_business_hours": int(hire.loc["business_hours", "extra_fte"]),
         "staff_hire_extra_fte_flat": int(hire.loc["flat", "extra_fte"]),
         "staff_utilisation_proposed": _r(sim.loc["proposed", "utilisation"], 3),
@@ -330,8 +372,11 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
                                            engine="python")["fte_demand_shaped"].iloc[0]),
         "sens_fte_goal_95": int(sens.query("value=='95%' and parameter.str.startswith('Service')",
                                            engine="python")["fte_demand_shaped"].iloc[0]),
-        "growth_holds_until_no_deflection": _r(holds(g_none), 2),
-        "growth_holds_until_with_deflection": _r(holds(g_base), 2),
+        "growth_holds_until_no_deflection": _r(h_none, 2),
+        "growth_holds_until_no_deflection_is_range_end": h_none_capped,
+        "growth_holds_until_with_deflection": _r(h_base, 2),
+        "growth_holds_until_with_deflection_is_range_end": h_base_capped,
+        "growth_max_tested": _r(float(growth["volume_factor"].max()) - 1, 2),
         # --- automation ----------------------------------------------------------------------------
         "auto_deflected_share_low": _r(a_sum.loc["low", "deflected_share_of_tickets"]),
         "auto_deflected_share_base": _r(a_sum.loc["base", "deflected_share_of_tickets"]),
@@ -348,12 +393,19 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "cost_fte_annual_eur": cfg["cost"]["fte_annual_eur"],
         "bc_hire_annual_cost_eur": int(opt.loc["A. Hire", "annual_cost_change_eur"]),
         "bc_hire_one_off_eur": int(opt.loc["A. Hire", "one_off_cost_eur"]),
+        "bc_hire_first_year_eur": int(opt.loc["A. Hire", "first_year_cost_eur"]),
         "bc_hire_sl": _r(opt.loc["A. Hire", "response_sl"]),
         "bc_reroster_sl": _r(opt.loc["B. Re-roster", "response_sl"]),
         "bc_automate_sl": _r(opt.loc["C. Automate", "response_sl"]),
         "bc_combined_sl": _r(opt.loc["B + C", "response_sl"]),
         "bc_status_quo_sl": _r(opt.loc["0. Status quo", "response_sl"]),
+        "bc_hire_sl_sum": _r(opt.loc["A. Hire", "response_sl_sum"]),
+        "bc_reroster_sl_sum": _r(opt.loc["B. Re-roster", "response_sl_sum"]),
+        "bc_automate_sl_sum": _r(opt.loc["C. Automate", "response_sl_sum"]),
+        "bc_combined_sl_sum": _r(opt.loc["B + C", "response_sl_sum"]),
+        "bc_status_quo_sl_sum": _r(opt.loc["0. Status quo", "response_sl_sum"]),
         "bc_automation_first_year_eur": int(opt.loc["C. Automate", "first_year_cost_eur"]),
+        "bc_automation_capacity_value_eur": int(a_sum.loc["base", "fte_freed"] * cfg["cost"]["fte_annual_eur"]),
     }
     vb = k["kpi_by_dimension"]
     sb = pd.read_parquet(processed_path("kpi_by_dimension_synth.parquet"))
@@ -372,4 +424,15 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
     kn["rep_sl_by_day_min"] = _r(w["by_day"].min())
     kn["rep_sl_by_day_max"] = _r(w["by_day"].max())
     kn["rep_ranking_stable"] = bool(((w["proposed"] > w["by_day"]) & (w["by_day"] > w["business_hours"])).all())
+    ws = reps.pivot(index="replication", columns="roster", values="response_sl_sum")
+    gs = 100 * (ws["proposed"] - ws["by_day"])
+    kn["rep_gain_pp_vs_by_day_sum_min"] = _r(gs.min(), 2)
+    kn["rep_gain_pp_vs_by_day_sum_max"] = _r(gs.max(), 2)
+    hp = 100 * (w["hire_by_day"] - w["proposed"])
+    kn["rep_hire_minus_reroster_pp_min"] = _r(hp.min(), 2)
+    kn["rep_hire_minus_reroster_pp_max"] = _r(hp.max(), 2)
+    hps = 100 * (ws["hire_by_day"] - ws["proposed"])
+    kn["rep_hire_minus_reroster_pp_sum_min"] = _r(hps.min(), 2)
+    kn["rep_hire_minus_reroster_pp_sum_max"] = _r(hps.max(), 2)
+    kn["rep_ranking_stable_sum"] = bool(((ws["proposed"] > ws["by_day"]) & (ws["by_day"] > ws["business_hours"])).all())
     return kn

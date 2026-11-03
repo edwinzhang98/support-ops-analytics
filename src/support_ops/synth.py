@@ -168,14 +168,17 @@ def follow_up_touches(interactions: np.ndarray, channel: np.ndarray, semantics: 
 
 def build_work_items(tickets: pd.DataFrame, cfg: dict, rng: np.random.Generator,
                      semantics: str = "touches", aht_multiplier: float = 1.0,
-                     t0: pd.Timestamp | None = None) -> pd.DataFrame:
+                     t0: pd.Timestamp | None = None, follow_up_timing: str = "anytime") -> pd.DataFrame:
     """Translate tickets into agent work items with arrival time and handle time.
 
     * first touch: chat/phone -> LIVE item at creation (customer is waiting);
       email -> ASYNC item at creation (first reply).
     * follow-up touches -> ASYNC items spread uniformly between 1 hour after creation
       and the ticket's resolution (or 6 days for tickets never resolved).
-    Tickets never touched in the seed (Open, no response) create no work.
+    Tickets never touched in the seed (Open, no response) create no work. Note: tickets never
+    resolved get their follow-ups compressed into 6 days (~18% of follow-up work).
+    follow_up_timing="weekdays" moves follow-ups that land on Sat/Sun to Monday, same time of
+    day (stress test: weekend follow-up work is deferred rather than done when it arises).
     Times are seconds from t0 (default: 1 Jan of the scenario year, 00:00).
     """
     st = cfg["staffing"]
@@ -212,8 +215,14 @@ def build_work_items(tickets: pd.DataFrame, cfg: dict, rng: np.random.Generator,
         "topic": touched["topic"].to_numpy()[rep],
         "arrival_s": rng.uniform(lo, hi),
         "service_s": _lognormal(rng, 1.0, cv, len(rep)) * ht["follow_up"] * 60 * aht_multiplier,
-        "pickup_delay_min": np.nan,
-        "response_target_min": np.nan,
     })
+    if follow_up_timing == "weekdays":
+        ts = t0 + pd.to_timedelta(fu["arrival_s"], unit="s")
+        dow = ts.dt.day_of_week.to_numpy()
+        shift_days = np.where(dow == 5, 2, np.where(dow == 6, 1, 0))
+        fu["arrival_s"] = fu["arrival_s"] + shift_days * 86400.0
+    elif follow_up_timing != "anytime":
+        raise ValueError(follow_up_timing)
+    fu = fu.assign(pickup_delay_min=np.nan, response_target_min=np.nan)
     items = pd.concat([first, fu], ignore_index=True).sort_values("arrival_s", kind="stable")
     return items.reset_index(drop=True)

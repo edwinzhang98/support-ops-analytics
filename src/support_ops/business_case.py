@@ -17,7 +17,7 @@ from .staffing import simulate_roster
 
 
 def simulate_growth(fct: pd.DataFrame, cfg: dict, roster: np.ndarray,
-                    factors=(1.0, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30),
+                    factors=(1.0, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30, 1.40, 1.50),
                     deflection_level: str | None = None) -> pd.DataFrame:
     """Response SLA of a fixed roster as volume grows.
 
@@ -37,6 +37,7 @@ def simulate_growth(fct: pd.DataFrame, cfg: dict, roster: np.ndarray,
         s, _, _ = simulate_roster(f"growth_{f}", roster, it, st, seed + 100, t)
         rows.append({"volume_factor": f, "deflection": deflection_level or "none",
                      "queue_sl": s["queue_sl"], "response_sl": s["response_sl"],
+                     "response_sl_sum": s["response_sl_sum"], "live_queue_sl": s["live_queue_sl"],
                      "process_sl": s["process_sl"], "email_queue_sl": s["email_queue_sl"],
                      "utilisation": s["utilisation"]})
     return pd.DataFrame(rows)
@@ -55,13 +56,16 @@ def replicate_rosters(fct: pd.DataFrame, cfg: dict, coverage: pd.DataFrame, n_re
         for j, name in enumerate(rosters):
             s, _, _ = simulate_roster(name, coverage[f"scheduled_{name}"].to_numpy(), it, st, base + 100 + j, t)
             rows.append({"replication": r + 1, "roster": name, "response_sl": s["response_sl"],
-                         "queue_sl": s["queue_sl"], "process_sl": s["process_sl"]})
+                         "response_sl_sum": s["response_sl_sum"], "queue_sl": s["queue_sl"],
+                         "process_sl": s["process_sl"]})
     return pd.DataFrame(rows)
 
 
-def options(cp: dict, auto: dict, tickets: pd.DataFrame, items: pd.DataFrame, cfg: dict,
-            email_alert: dict) -> pd.DataFrame:
-    """Compare the decision options on cost and simulated response SLA."""
+def options(cp: dict, auto: dict, tickets: pd.DataFrame, items: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Compare the decision options on cost and simulated response SLA (both response rules).
+
+    The email alert is NOT stacked in here: it is a pilot whose catch rate is unknown (see rca.email_alert_lever).
+    """
     st, cost = cfg["staffing"], cfg["cost"]
     sim = cp["sim_summary"].set_index("roster")
     fte = cp["fte_current"]
@@ -75,33 +79,32 @@ def options(cp: dict, auto: dict, tickets: pd.DataFrame, items: pd.DataFrame, cf
     s_bc, _, _ = simulate_roster("reroster_automate", cov["scheduled_proposed"].to_numpy(), i_d, st,
                                  cfg["random_seed"] + 402, t_d)
     a_base = auto["automation_summary"].set_index("level").loc["base"]
+    fte_eq = float(hire["extra_fte_equivalent"])
 
-    def row(option, what, fte_, one_off, annual, sl, queue_sl, note):
+    def row(option, what, fte_, one_off, annual, s_, note):
         return {"option": option, "what_changes": what, "fte": fte_, "one_off_cost_eur": one_off,
-                "annual_cost_change_eur": annual, "response_sl": sl, "queue_sl": queue_sl, "note": note}
+                "annual_cost_change_eur": annual, "response_sl": s_["response_sl"],
+                "response_sl_sum": s_["response_sl_sum"], "queue_sl": s_["queue_sl"],
+                "process_sl": s_["process_sl"], "note": note}
 
     rows = [
-        row("0. Status quo", "Today's roster (assumed weekday-weighted), no change", fte, 0, 0,
-            sim.loc["by_day", "response_sl"], sim.loc["by_day", "queue_sl"],
-            f"{int(cp['hire_options'].set_index('hypothesis').loc['by_day', 'hours_under_covered_today'])} "
-            "of 168 weekly hours below requirement (mostly weekends)"),
-        row("A. Hire", f"Keep today's roster, add {int(hire['extra_fte'])} FTE on the under-covered shifts",
-            int(hire["fte_after_hiring"]), int(hire["extra_fte"]) * cost["hire_one_off_eur"],
-            int(hire["extra_fte"]) * cost["fte_annual_eur"],
-            sim.loc["hire_by_day", "response_sl"], sim.loc["hire_by_day", "queue_sl"],
-            "Closes the gaps by adding people instead of moving them"),
-        row("B. Re-roster", "Move existing shifts to match workload (demand-shaped roster)", fte, 0, 0,
-            sim.loc["proposed", "response_sl"], sim.loc["proposed", "queue_sl"],
-            "Same people and hours; change takes one roster cycle"),
-        row("C. Automate", f"Self-service + routing deflects {a_base['deflected_share_of_tickets']:.0%} "
-            "of tickets; roster unchanged", fte, cost["automation_one_off_eur"], cost["automation_annual_eur"],
-            s_c["response_sl"], s_c["queue_sl"],
+        row("0. Status quo", "Today's roster (assumed weekday-weighted), no change", fte, 0, 0, sim.loc["by_day"],
+            f"{int(hire['hours_under_covered_today'])} of 168 weekly hours below requirement, all at weekends"),
+        row("A. Hire", f"Keep today's roster, add {int(hire['extra_weekly_shifts'])} weekend shifts "
+            f"(= {fte_eq:.1f} FTE; {int(hire['extra_fte'])} whole hires)",
+            round(fte + fte_eq, 1), int(hire["extra_fte"]) * cost["hire_one_off_eur"],
+            round(fte_eq * cost["fte_annual_eur"]), sim.loc["hire_by_day"],
+            "Closes the weekend gaps by adding people instead of moving them"),
+        row("B. Re-roster", "Move shifts from weekdays to weekends (workload-matched, near-flat roster)", fte, 0, 0,
+            sim.loc["proposed"], "Same people and hours; needs weekend rota changes; one roster cycle"),
+        row("C. Automate", f"Self-service + routing deflects {a_base['deflected_share_of_tickets']:.0%} of tickets; "
+            "roster unchanged", fte, cost["automation_one_off_eur"], cost["automation_annual_eur"], s_c,
             f"Workload -{a_base['workload_reduction_share']:.0%}; deflection rates are assumptions"),
         row("B + C", "Re-roster now, add deflection over the quarter", fte, cost["automation_one_off_eur"],
-            cost["automation_annual_eur"], s_bc["response_sl"], s_bc["queue_sl"],
-            f"Frees ~{int(a_base['fte_freed'])} FTE of capacity for backlog clean-up or growth"),
+            cost["automation_annual_eur"], s_bc,
+            f"Frees ~{int(a_base['fte_freed'])} FTE of capacity for the stale-ticket sweep or growth; deflected "
+            "tickets also change the pickup mix, so its ceiling differs slightly"),
     ]
     out = pd.DataFrame(rows)
-    out["response_sl_with_email_alert"] = out["response_sl"] + email_alert["base_uplift_pp"] / 100
     out["first_year_cost_eur"] = out["one_off_cost_eur"] + out["annual_cost_change_eur"]
     return out

@@ -63,10 +63,11 @@ def load_vs_sla(fct: pd.DataFrame, n_bins: int = 5) -> pd.DataFrame:
     is usually 0 by chance, which makes busier days look worse even at constant risk.
     """
     w = workload_at_creation(fct)
+    jitter = np.random.default_rng(0).uniform(0, 1e-3, len(w))   # break ties at random, not by time order
     rows = []
     for load_col, load_label in [("tickets_same_day", "tickets created the same day"),
                                  ("in_progress_at_arrival", "tickets in progress at arrival")]:
-        w["bin"] = pd.qcut(w[load_col].rank(method="first"), n_bins, labels=False)
+        w["bin"] = pd.qcut((w[load_col] + jitter).rank(method="first"), n_bins, labels=False)
         for sla in ["response_sla_met", "resolution_sla_met"]:
             sub = w[w[sla].notna()]
             g = sub.groupby("bin").agg(n=(sla, "size"), met=(sla, "sum"),

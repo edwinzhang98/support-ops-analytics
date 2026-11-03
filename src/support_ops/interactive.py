@@ -69,16 +69,16 @@ def deflection_whatif(profile: pd.DataFrame, work_by_topic: pd.Series, demand: p
 
 
 def costed_options(opts: pd.DataFrame, fte_annual_eur: float, hire_one_off_eur: float,
-                   automation_one_off_eur: float, automation_annual_eur: float,
-                   alert_uplift_pp: float) -> pd.DataFrame:
+                   automation_one_off_eur: float, automation_annual_eur: float) -> pd.DataFrame:
     """Re-price the options with new cost assumptions (SLA effects come from the simulation)."""
     o = opts.copy()
-    extra_fte = (o["fte"] - o.loc[o["option"] == "0. Status quo", "fte"].iloc[0]).clip(lower=0)
+    base_fte = o.loc[o["option"] == "0. Status quo", "fte"].iloc[0]
+    extra_fte = (o["fte"] - base_fte).clip(lower=0)
+    whole_hires = np.ceil(extra_fte - 1e-9)
     is_auto = o["option"].isin(["C. Automate", "B + C"])
-    o["one_off_cost_eur"] = extra_fte * hire_one_off_eur + is_auto * automation_one_off_eur
+    o["one_off_cost_eur"] = whole_hires * hire_one_off_eur + is_auto * automation_one_off_eur
     o["annual_cost_change_eur"] = extra_fte * fte_annual_eur + is_auto * automation_annual_eur
     o["first_year_cost_eur"] = o["one_off_cost_eur"] + o["annual_cost_change_eur"]
-    o["response_sl_with_email_alert"] = o["response_sl"] + alert_uplift_pp / 100
     return o
 
 

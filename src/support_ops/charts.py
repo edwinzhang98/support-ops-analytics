@@ -34,19 +34,27 @@ SYNTH = "SYNTHETIC · 20x scale-up calibrated to the export"
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
+def _wrap(text: str, width: int = 135) -> list[str]:
+    import textwrap
+    return textwrap.wrap(text, width=width, break_long_words=False) or [""]
+
+
 def _style(fig: go.Figure, title: str, takeaway: str, source: str, x_title: str = "",
            y_title: str = "", height: int = 420, legend: bool = True) -> go.Figure:
+    lines = _wrap(takeaway)
+    top = 74 + 19 * len(lines)                       # room for title + wrapped takeaway + source line
+    bottom = (92 if x_title else 64) if legend else (58 if x_title else 40)
     fig.update_layout(
-        title=dict(text=f"<b>{title}</b>", x=0, xanchor="left", y=0.97, yanchor="top",
-                   font=dict(size=16, color=TEXT),
-                   subtitle=dict(text=f"{takeaway}<br><span style='color:{NEUTRAL}'>{source}</span>",
+        title=dict(text=f"<b>{title}</b>", x=0, xanchor="left", yref="container", y=1, yanchor="top",
+                   pad=dict(t=14), font=dict(size=16, color=TEXT),
+                   subtitle=dict(text="<br>".join(lines) + f"<br><span style='color:{NEUTRAL}'>{source}</span>",
                                  font=dict(size=12.5, color=TEXT_2))),
         font=dict(family=FONT, size=12.5, color=TEXT),
-        paper_bgcolor=SURFACE, plot_bgcolor=SURFACE, height=height,
-        margin=dict(l=60, r=24, t=112, b=56),
+        paper_bgcolor=SURFACE, plot_bgcolor=SURFACE, height=height + 19 * (len(lines) - 1),
+        margin=dict(l=60, r=24, t=top, b=bottom),
         hoverlabel=dict(bgcolor="white", bordercolor=AXIS, font=dict(family=FONT, size=12, color=TEXT)),
         showlegend=legend,
-        legend=dict(orientation="h", x=0, xanchor="left", y=-0.16, yanchor="top",
+        legend=dict(orientation="h", x=0, xanchor="left", yref="container", y=0, yanchor="bottom",
                     font=dict(size=12, color=TEXT_2), bgcolor="rgba(0,0,0,0)"),
         bargap=0.35, bargroupgap=0.08,
     )
@@ -111,8 +119,9 @@ def fig_weekday_workload(rate: dict) -> go.Figure:
                     hovertemplate="%{x}: %{y:.1f} per day<extra>" + name + "</extra>")
     return _style(fig, "New tickets vs resolutions by day of week",
                   f"Weekends get {rate['created_weekend_to_weekday']:.0%} of weekday arrivals but "
-                  f"{rate['resolved_weekend_to_weekday']:.0%} of weekday resolutions: weekend workload "
-                  "is much higher than ticket counts suggest.", REAL, "", "Tickets per day")
+                  f"{rate['resolved_weekend_to_weekday']:.0%} of weekday resolutions: work keeps running through the "
+                  "weekend (resolution clocks in this export ignore the calendar, so treat as indicative).",
+                  REAL, "", "Tickets per day")
 
 
 def fig_topic_pareto(pareto: pd.DataFrame, level: str = "topic") -> go.Figure:
@@ -442,29 +451,33 @@ def fig_gap_heatmap(cov: pd.DataFrame, roster: str = "by_day", label: str | None
 def fig_roster_sl(sim: pd.DataFrame, goal: float = 0.90) -> go.Figure:
     order = ["business_hours", "by_day", "flat", "proposed", "hire_by_day"]
     names = {"business_hours": "Today (alt.):<br>day-weighted", "by_day": "Today (assumed):<br>weekday-weighted",
-             "flat": "Today (alt.):<br>flat 24/7", "proposed": "Proposed:<br>demand-shaped",
-             "hire_by_day": "Hire: today's roster<br>+ extra FTE"}
+             "flat": "Today (alt.):<br>flat 24/7", "proposed": "Proposed:<br>workload-matched",
+             "hire_by_day": "Hire: today's roster<br>+ weekend shifts"}
     s = sim.set_index("roster").reindex([o for o in order if o in set(sim["roster"])])
-    colors = [SERIES[0] if r == "proposed" else ("#9ec5f4" if r.startswith("hire") else "#cfcec9") for r in s.index]
-    fig = go.Figure(go.Bar(
-        x=[names[r] for r in s.index], y=s["response_sl"], marker=dict(color=colors, cornerradius=4),
-        text=[f"<b>{v:.1%}</b><br>{int(f)} FTE" for v, f in zip(s["response_sl"], s["fte"])],
-        textposition="inside", insidetextanchor="end",
-        textfont=dict(color=["white" if r == "proposed" else TEXT for r in s.index], size=12),
-        customdata=np.c_[s["queue_sl"], s["process_sl"], s["fte"]],
-        hovertemplate="%{x}<br>Response SLA %{y:.1%}<br>Queue on time %{customdata[0]:.1%} · pickup on time "
-                      "%{customdata[1]:.1%} · %{customdata[2]} FTE<extra></extra>"))
+    x = [names[r] for r in s.index]
+    fig = go.Figure()
+    for col, name, color, txt in [
+            ("response_sl", "Optimistic rule: later of queue wait and pickup delay", SERIES[0], "white"),
+            ("response_sl_sum", "Conservative rule: queue wait + pickup delay", "#9ec5f4", TEXT)]:
+        fig.add_bar(x=x, y=s[col], name=name, marker=dict(color=color, cornerradius=4),
+                    text=[f"<b>{v:.1%}</b>" for v in s[col]], textposition="inside", insidetextanchor="end",
+                    textfont=dict(color=txt, size=11.5),
+                    customdata=np.c_[s["queue_sl"], s["process_sl"], s["fte"]],
+                    hovertemplate="%{x}<br>%{y:.1%} answered on time<br>Queue on time %{customdata[0]:.1%} · "
+                                  "pickup on time %{customdata[1]:.1%} · %{customdata[2]} FTE<extra>" + name + "</extra>")
     floor = float(s["process_sl"].iloc[0])
     fig.add_hline(y=floor, line=dict(color=SERIES[1], width=1.5),
                   annotation_text=f"Process ceiling {floor:.1%} (pickup delays only, no queue)",
                   annotation_position="top left", annotation_font=dict(size=11, color=TEXT_2))
     _goal_line(fig, goal, f"Goal {goal:.0%}")
+    fig.update_layout(barmode="group", bargap=0.3, bargroupgap=0.06)
     fig.update_yaxes(tickformat=".0%", range=[0.75, 0.93])
-    gain = s.loc["proposed", "response_sl"] - s.loc["by_day", "response_sl"]
-    return _style(fig, "Simulated response SLA by roster (same synthetic year)",
-                  f"Re-rostering the same people lifts response SLA by {gain * 100:.1f} points to the process "
-                  "ceiling; no roster can beat the ceiling - only faster pickup can.", SYNTH, "",
-                  "Tickets answered on time (%)", height=460, legend=False)
+    g_max = 100 * (s.loc["proposed", "response_sl"] - s.loc["by_day", "response_sl"])
+    g_sum = 100 * (s.loc["proposed", "response_sl_sum"] - s.loc["by_day", "response_sl_sum"])
+    return _style(fig, "Simulated response SLA by roster (same synthetic year, same headcount except 'Hire')",
+                  f"Moving shifts from weekdays to weekends lifts response SLA by {g_max:.1f} (optimistic) to "
+                  f"{g_sum:.1f} (conservative) points. No roster beats the process ceiling - only faster pickup can.",
+                  SYNTH, "", "Tickets answered on time (%)", height=480)
 
 
 def fig_sensitivity(sens: pd.DataFrame) -> go.Figure:
@@ -491,24 +504,28 @@ def fig_sensitivity(sens: pd.DataFrame) -> go.Figure:
                   "Change in FTE needed vs base case", "", height=520, legend=False)
 
 
-def fig_growth(growth: pd.DataFrame) -> go.Figure:
+def fig_growth(growth: pd.DataFrame, goal: float = 0.90, max_occ: float = 0.85) -> go.Figure:
     fig = go.Figure()
     for i, (lvl, name) in enumerate([("none", "Proposed roster, no deflection"),
                                      ("base", "Proposed roster + self-service (base deflection)")]):
         g = growth[growth["deflection"] == lvl]
-        fig.add_scatter(x=(g["volume_factor"] - 1), y=g["response_sl"], name=name, mode="lines+markers",
+        fig.add_scatter(x=(g["volume_factor"] - 1), y=g["queue_sl"], name=name, mode="lines+markers",
                         line=dict(color=SERIES[i], width=2), marker=dict(size=7, line=dict(color=SURFACE, width=2)),
-                        hovertemplate="Volume %{x:+.0%}: response SLA %{y:.1%}<extra>" + name + "</extra>")
-    floor = growth["process_sl"].mean()
-    fig.add_hline(y=floor, line=dict(color=SERIES[1], width=1, dash="solid"),
-                  annotation_text=f"Process ceiling {floor:.1%}", annotation_position="bottom left",
-                  annotation_font=dict(size=11, color=TEXT_2))
+                        customdata=np.c_[g["utilisation"], g["response_sl"]],
+                        hovertemplate="Volume %{x:+.0%}: %{y:.1%} of contacts reached an agent within target<br>"
+                                      "Agent utilisation %{customdata[0]:.0%} · end-to-end response SLA "
+                                      "%{customdata[1]:.1%} (optimistic rule)<extra>" + name + "</extra>")
+    _goal_line(fig, goal, f"Staffing goal {goal:.0%}")
     fig.update_xaxes(tickformat="+.0%")
-    fig.update_yaxes(tickformat=".0%")
-    return _style(fig, "How much volume growth the same 24 FTE can absorb",
-                  "With today's headcount re-rostered, SLA holds near the ceiling for modest growth; "
-                  "deflection buys extra headroom before a hire is needed.", SYNTH,
-                  "Ticket volume vs 2023", "Response SLA (%)")
+    fig.update_yaxes(tickformat=".0%", range=[0.4, 1.02])
+    g = growth[growth["deflection"] == "none"]
+    ok = (g["queue_sl"] >= goal) & (g["utilisation"] <= max_occ)
+    n_ok = len(ok) if ok.all() else int(np.argmin(ok.to_numpy()))
+    holds = float(g["volume_factor"].iloc[n_ok - 1] - 1) if n_ok else 0.0
+    return _style(fig, "How much volume growth the same roster can absorb",
+                  f"Without deflection the roster meets the staffing goal up to +{holds:.0%} volume (and stays under "
+                  f"{max_occ:.0%} utilisation); with base-case deflection it still meets it at the top of the tested "
+                  "range.", SYNTH, "Ticket volume vs 2023", "Contacts reaching an agent within target (%)")
 
 
 def fig_erlang_curve(lam: float, aht: float, target_min: float, goal: float, max_agents: int = 12) -> go.Figure:
@@ -577,21 +594,26 @@ def fig_hours_saved(by_topic: pd.DataFrame) -> go.Figure:
 def fig_options(opts: pd.DataFrame) -> go.Figure:
     o = opts.copy()
     fig = go.Figure()
-    fig.add_bar(x=o["option"], y=o["response_sl"], name="Response SLA (simulated)",
-                marker=dict(color=[SERIES[0] if x.startswith("B") else "#cfcec9" for x in o["option"]],
-                            cornerradius=4),
-                text=[f"<b>{v:.1%}</b><br>€{c / 1000:,.0f}k year-1 cost" for v, c in zip(o["response_sl"],
-                                                                                o["first_year_cost_eur"])],
-                textposition="outside", textfont=dict(size=11, color=TEXT),
-                customdata=np.c_[o["fte"], o["one_off_cost_eur"], o["annual_cost_change_eur"], o["what_changes"]],
-                hovertemplate="%{x}<br>%{customdata[3]}<br>Response SLA %{y:.1%} · %{customdata[0]} FTE<br>"
-                              "One-off €%{customdata[1]:,.0f} · recurring €%{customdata[2]:+,.0f}/yr"
-                              "<extra></extra>")
-    fig.update_yaxes(tickformat=".0%", range=[0.80, 0.92])
-    return _style(fig, "Options: response SLA and first-year cost",
-                  "Re-rostering reaches the same SLA as hiring, at no cost. Automation adds headroom; none of the "
-                  "options moves the process ceiling - that needs the pickup fixes.", SYNTH, "",
-                  "Response SLA (%)", height=440, legend=False)
+    for col, name, color, txt in [
+            ("response_sl", "Optimistic rule", SERIES[0], "white"),
+            ("response_sl_sum", "Conservative rule", "#9ec5f4", TEXT)]:
+        fig.add_bar(x=o["option"], y=o[col], name=f"Response SLA - {name.lower()}",
+                    marker=dict(color=color, cornerradius=4),
+                    text=[f"<b>{v:.1%}</b>" for v in o[col]], textposition="inside", insidetextanchor="end",
+                    textfont=dict(color=txt, size=11.5),
+                    customdata=np.c_[o["fte"], o["one_off_cost_eur"], o["annual_cost_change_eur"], o["what_changes"]],
+                    hovertemplate="%{x}<br>%{customdata[3]}<br>Response SLA %{y:.1%} · %{customdata[0]} FTE<br>"
+                                  "One-off €%{customdata[1]:,.0f} · recurring €%{customdata[2]:+,.0f}/yr"
+                                  "<extra>" + name + "</extra>")
+    for xv, c in zip(o["option"], o["first_year_cost_eur"]):
+        fig.add_annotation(x=xv, y=0.905, text=f"€{c / 1000:,.0f}k yr 1", showarrow=False,
+                           font=dict(size=11.5, color=TEXT))
+    fig.update_layout(barmode="group", bargap=0.3, bargroupgap=0.06)
+    fig.update_yaxes(tickformat=".0%", range=[0.78, 0.92])
+    return _style(fig, "Options: simulated response SLA and first-year cost",
+                  "Re-rostering gets most of what hiring gets, at no cost; hiring adds 0-1 points more depending on "
+                  "the rule. None of the options moves the process ceiling - that needs the pickup fixes.", SYNTH, "",
+                  "Response SLA (%)", height=460)
 
 
 def fig_email_alert(alert: pd.DataFrame, now: float, goal: float = 0.90) -> go.Figure:

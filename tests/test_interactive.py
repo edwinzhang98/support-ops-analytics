@@ -35,11 +35,14 @@ def test_more_shrinkage_needs_more_people():
 
 def test_costed_options_hire_cost_scales_with_fte_cost():
     opts = pd.read_parquet(processed_path("business_options.parquet"))
-    a = interactive.costed_options(opts, 60000, 5000, 40000, 25000, 2.2)
-    b = interactive.costed_options(opts, 70000, 5000, 40000, 25000, 2.2)
+    a = interactive.costed_options(opts, 60000, 5000, 40000, 25000)
+    b = interactive.costed_options(opts, 70000, 5000, 40000, 25000)
     hire_a = a.loc[a.option == "A. Hire", "annual_cost_change_eur"].iloc[0]
     hire_b = b.loc[b.option == "A. Hire", "annual_cost_change_eur"].iloc[0]
-    assert hire_b - hire_a == pytest.approx(10000 * (a.loc[a.option == "A. Hire", "fte"].iloc[0] - 24))
+    base = a.loc[a.option == "0. Status quo", "fte"].iloc[0]
+    assert hire_b - hire_a == pytest.approx(10000 * (a.loc[a.option == "A. Hire", "fte"].iloc[0] - base))
+    # the pipeline's own costs are reproduced with the config values
+    assert hire_a == pytest.approx(opts.loc[opts.option == "A. Hire", "annual_cost_change_eur"].iloc[0], rel=1e-6)
     assert a.loc[a.option == "B. Re-roster", "first_year_cost_eur"].iloc[0] == 0
 
 

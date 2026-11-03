@@ -7,14 +7,15 @@ Steps
                                   [live work interrupts email work, so it sees the whole pool],
                                   ceil(total workload / max occupancy),
                                   1 agent minimum for 24/7 coverage )
-                       scheduled = ceil(N / (1 - shrinkage))
+                       scheduled = ceil(N / (1 - shrinkage))   (people are whole: rounded once, here)
  3. rosters            demand-shaped roster (integer program) vs three hypotheses for
                        today's roster with the SAME number of weekly shifts
  4. simulate           replay the synthetic year under each roster (support_ops.simulation)
  5. sensitivity        how the answer moves with each assumption
 
-The response SLA a customer sees = pickup delay (real behaviour, from the export)
-+ queue wait (staffing). Staffing can only remove the second part.
+The response time a customer sees combines the real pickup delay (from the export) with the
+queue wait (staffing). We bracket how the two combine: the LATER of the two (optimistic: waits and
+slow pickups overlap) and the SUM (conservative: they add up). Staffing can only remove the queue part.
 """
 from __future__ import annotations
 
@@ -95,24 +96,35 @@ def requirement(demand: pd.DataFrame, st: dict, sl_goal: float | None = None,
         aht_l, aht_a = r.aht_live_min * aht_factor, r.aht_async_min * aht_factor
         a_l, a_a = lam_l * aht_l / 60, lam_a * aht_a / 60
         if model == "blended":
+            # live contacts: whole agents from Erlang C (live work can interrupt email work, so the
+            # whole pool serves them); workload: a fractional need (Erlangs / max occupancy).
             n_live = erlang.required_agents(lam_l, aht_l, st["live_target_min"], sl_goal, 1.0, 0)
-            n_work = math.ceil((a_l + a_a) / max_occ - 1e-9)
+            n_work = (a_l + a_a) / max_occ
             n = max(n_live, n_work, min_agents)
-            binding = "live response" if n == n_live and n_live >= n_work and n_live > min_agents else (
-                "workload / occupancy cap" if n == n_work and n_work > min_agents else "24/7 minimum")
+            binding = ("live response" if n_live >= n_work and n_live > min_agents else
+                       "workload / occupancy cap" if n_work > min_agents else "24/7 minimum")
         elif model == "two_pool":
             n_live = erlang.required_agents(lam_l, aht_l, st["live_target_min"], sl_goal, max_occ, min_agents)
             n_work = erlang.required_agents(lam_a, aht_a, st["async_target_min"], sl_goal, max_occ, min_agents)
             n, binding = n_live + n_work, "two separate pools"
         else:
             raise ValueError(model)
+        # people are whole: round once, after shrinkage (not once for agents and again for people)
+        sched = erlang.scheduled_agents(n, shrink)
         rows.append({"how": r.how, "erlangs_live": a_l, "erlangs_async": a_a,
                      "erlangs_total": a_l + a_a, "agents_live_response": n_live,
                      "agents_workload": n_work, "productive_required": n,
-                     "scheduled_required": erlang.scheduled_agents(n, shrink), "binding": binding,
-                     "occupancy_at_requirement": (a_l + a_a) / n if n else 0.0,
-                     "live_sl_at_requirement": erlang.service_level(n, a_l, aht_l, st["live_target_min"])})
+                     "scheduled_required": sched, "binding": binding,
+                     "occupancy_at_requirement": (a_l + a_a) / (sched * (1 - shrink)) if sched else 0.0,
+                     "live_sl_at_requirement": erlang.service_level_fractional(
+                         sched * (1 - shrink), a_l, aht_l, st["live_target_min"])})
     return demand[["how", "dow", "dow_name", "hour"]].merge(pd.DataFrame(rows), on="how")
+
+
+def continuous_fte(demand: pd.DataFrame, st: dict, shift_h: int = 8) -> float:
+    """No-rounding lower bound: weekly workload / max occupancy / (1 - shrinkage) / hours per FTE."""
+    agent_hours = (demand["erlangs_total"] / st["max_occupancy"] / (1 - st["shrinkage"])).sum()
+    return float(agent_hours / (shift_h * st["shifts_per_fte_week"]))
 
 
 def min_fte_for_requirement(req: pd.DataFrame, starts: list[int], shifts_per_fte: int = 5) -> tuple[int, int]:
@@ -156,6 +168,7 @@ def simulate_roster(name: str, roster: np.ndarray, items: pd.DataFrame, st: dict
         "queue_sl": resp["queue_met"].mean(),
         "process_sl": resp["process_met"].mean(),
         "response_sl": resp["response_met"].mean(),
+        "response_sl_sum": resp["response_met_sum"].mean(),
         "response_sl_chat": resp.loc[resp.channel == "Chat", "response_met"].mean(),
         "response_sl_phone": resp.loc[resp.channel == "Phone", "response_met"].mean(),
         "response_sl_email": resp.loc[resp.channel == "Email", "response_met"].mean(),
@@ -169,11 +182,17 @@ def simulate_roster(name: str, roster: np.ndarray, items: pd.DataFrame, st: dict
     return summary, resp, hourly
 
 
-def capacity_plan(tickets: pd.DataFrame, cfg: dict) -> dict:
-    """Run the full capacity plan for the base assumptions. Returns tables for caching."""
+def capacity_plan(tickets: pd.DataFrame, cfg: dict, follow_up_timing: str = "anytime") -> dict:
+    """Run the full capacity plan for the base assumptions. Returns tables for caching.
+
+    follow_up_timing: "anytime" (base: follow-up work is done when it arises, incl. weekends) or
+    "weekdays" (follow-ups that would fall on a weekend wait until Monday) - a stress test of the
+    weekend-workload assumption.
+    """
     st = cfg["staffing"]
     seed = cfg["random_seed"]
-    items = build_work_items(tickets, cfg, np.random.default_rng(seed + 1), semantics="touches")
+    items = build_work_items(tickets, cfg, np.random.default_rng(seed + 1), semantics="touches",
+                             follow_up_timing=follow_up_timing)
     demand = demand_by_how(items, tickets)
     req = requirement(demand, st)
     starts = st["shift_starts"]
@@ -196,7 +215,8 @@ def capacity_plan(tickets: pd.DataFrame, cfg: dict) -> dict:
         n_extra = int(extra["agents"].sum())
         extra_fte = fte_from_shifts(n_extra, st["shifts_per_fte_week"]) if n_extra else 0
         hire.append({"hypothesis": kind, "description": HYPOTHESES[kind],
-                     "extra_weekly_shifts": n_extra, "extra_fte": extra_fte, "fte_after_hiring": fte + extra_fte,
+                     "extra_weekly_shifts": n_extra, "extra_fte_equivalent": n_extra / st["shifts_per_fte_week"],
+                     "extra_fte": extra_fte, "fte_after_hiring": fte + extra_fte,
                      "hours_under_covered_today": int(np.sum(coverage_from_shifts(shift_sets[kind])
                                                              < req["scheduled_required"].to_numpy()))})
         shift_sets[f"hire_{kind}"] = combine_shifts(shift_sets[kind], extra)
@@ -230,6 +250,7 @@ def capacity_plan(tickets: pd.DataFrame, cfg: dict) -> dict:
         "sim_summary": sim, "sim_response": pd.concat(responses, ignore_index=True),
         "sim_hourly": pd.concat(hourly, ignore_index=True), "hire_options": hire,
         "fte_current": fte, "weekly_shifts_current": budget, "min_shifts_demand_shaped": min_shifts,
+        "fte_continuous": continuous_fte(demand, st),
         "min_coverage_ratio_proposed": proposed.attrs.get("min_coverage_ratio"), **tables,
     }
 
