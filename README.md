@@ -131,6 +131,7 @@ make all            # = python run.py + executed notebooks; ~2 minutes
 
 - **Data location:** set `data.raw_csv` in `config.yaml`, or copy `.env.example` to `.env` and set `SUPPORT_TICKETS_CSV=/path/to/Technical Support Dataset.csv`. The default is `~/projects/data-projects/datasets/p6-support-tickets/technical-support/`. Raw data is never committed (`data/`, `*.csv` and `*.parquet` are gitignored).
 - **Other targets:** `make test` (Erlang C, simulation, roster, what-if tests), `make app` (Streamlit), `make screenshots` (needs `requirements-dev.txt` and `playwright install chromium`).
+- **Troubleshooting:** static PNGs (`reports/figures`, notebook fallbacks) are rendered by kaleido, which needs a Chrome install. If none is found, run `plotly_get_chrome` once. Notebook HTML exports load plotly.js from a CDN, while `reports/report.html` embeds it and works offline.
 
 ## Repository map
 

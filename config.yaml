@@ -30,8 +30,8 @@ staffing:
   live_channels: ["Chat", "Phone"]   # need an agent within minutes
   live_target_min: 2                 # response target for chat/phone (from data)
   async_target_min: 60               # response target for email (from data); also used for follow-ups
-  sl_goal: 0.90                      # share of contacts answered within target
-  max_occupancy: 0.85                # cap on time agents spend handling work
+  sl_goal: 0.90                      # share of live contacts answered within target (Erlang C)
+  max_occupancy: 0.85                # planning cap on the share of available time agents spend handling work
   shrinkage: 0.30                    # share of scheduled time not available (breaks, meetings, training, absence)
   # Handle time per agent touch, minutes (NOT in the data -> assumption, sensitivity +/-30%)
   handle_time_min:
@@ -40,7 +40,9 @@ staffing:
     email_first: 8
     follow_up: 6
   handle_time_cv: 0.8                # lognormal coefficient of variation used in simulation
-  min_agents_per_pool: 1             # 24/7 coverage: at least one agent on each pool every hour
+  min_agents_per_pool: 1             # 24/7 coverage: at least one productive agent every hour
+  # Requirement per hour = max(live Erlang C agents, workload / max_occupancy, minimum), grossed up for
+  # shrinkage and rounded ONCE to whole people (support_ops.staffing.requirement)
   shift_length_h: 8
   shift_starts: [0, 8, 12, 16]          # allowed starts for the proposed roster: night, day, mid, late
   # Today's roster is unknown; hypotheses use 3 x 8h shifts starting 00/08/16 (support_ops.roster.HYPOTHESES)
