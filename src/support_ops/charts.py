@@ -441,17 +441,18 @@ def fig_roster_sl(sim: pd.DataFrame, goal: float = 0.90) -> go.Figure:
     colors = [SERIES[0] if r == "proposed" else ("#9ec5f4" if r.startswith("hire") else "#cfcec9") for r in s.index]
     fig = go.Figure(go.Bar(
         x=[names[r] for r in s.index], y=s["response_sl"], marker=dict(color=colors, cornerradius=4),
-        text=[f"{v:.1%}<br>{int(f)} FTE" for v, f in zip(s["response_sl"], s["fte"])], textposition="outside",
-        textfont=dict(color=TEXT, size=12),
+        text=[f"<b>{v:.1%}</b><br>{int(f)} FTE" for v, f in zip(s["response_sl"], s["fte"])],
+        textposition="inside", insidetextanchor="end",
+        textfont=dict(color=["white" if r == "proposed" else TEXT for r in s.index], size=12),
         customdata=np.c_[s["queue_sl"], s["process_sl"], s["fte"]],
         hovertemplate="%{x}<br>Response SLA %{y:.1%}<br>Queue on time %{customdata[0]:.1%} · pickup on time "
                       "%{customdata[1]:.1%} · %{customdata[2]} FTE<extra></extra>"))
     floor = float(s["process_sl"].iloc[0])
     fig.add_hline(y=floor, line=dict(color=SERIES[1], width=1.5),
-                  annotation_text=f"Process ceiling {floor:.1%} (pickup delays, no queue)",
+                  annotation_text=f"Process ceiling {floor:.1%} (pickup delays only, no queue)",
                   annotation_position="top left", annotation_font=dict(size=11, color=TEXT_2))
     _goal_line(fig, goal, f"Goal {goal:.0%}")
-    fig.update_yaxes(tickformat=".0%", range=[0.75, 0.95])
+    fig.update_yaxes(tickformat=".0%", range=[0.75, 0.93])
     gain = s.loc["proposed", "response_sl"] - s.loc["by_day", "response_sl"]
     return _style(fig, "Simulated response SLA by roster (same synthetic year)",
                   f"Re-rostering the same people lifts response SLA by {gain * 100:.1f} points to the process "
@@ -473,7 +474,9 @@ def fig_sensitivity(sens: pd.DataFrame) -> go.Figure:
         hovertemplate="%{y}<br>%{customdata[0]} FTE needed (%{x:+d} vs base)<br>"
                       "Extra FTE if today's roster is kept: %{customdata[1]}<extra></extra>"))
     fig.add_vline(x=0, line=dict(color=TEXT, width=1))
-    fig.update_xaxes(showgrid=True, gridcolor=GRID, zeroline=False)
+    lo, hi = float(s["delta_fte_vs_base"].min()), float(s["delta_fte_vs_base"].max())
+    fig.update_traces(cliponaxis=False)
+    fig.update_xaxes(showgrid=True, gridcolor=GRID, zeroline=False, range=[min(lo, 0) - 6, max(hi, 0) + 7])
     fig.update_yaxes(showgrid=False, tickfont=dict(size=11))
     return _style(fig, f"Sensitivity: FTE needed vs the base case ({base} FTE)",
                   "Handle time and what 'interactions' means move the answer most; the SLA goal barely matters "
@@ -528,7 +531,8 @@ def fig_erlang_curve(lam: float, aht: float, target_min: float, goal: float, max
 def fig_automation_matrix(profile: pd.DataFrame) -> go.Figure:
     p = profile.copy()
     fig = go.Figure(go.Scatter(
-        x=p["share"], y=p["complexity_index"], mode="markers+text", text=p["topic"], textposition="top center",
+        x=p["share"], y=p["complexity_index"], mode="markers+text", text=p["topic"],
+        textposition=[{"Other": "top left", "Bug report": "bottom right"}.get(t, "top center") for t in p["topic"]],
         textfont=dict(size=11, color=TEXT),
         marker=dict(size=10 + 60 * p["deflection_base"], color=_rgba(SERIES[0], 0.75),
                     line=dict(color=SURFACE, width=2)),
@@ -569,12 +573,12 @@ def fig_options(opts: pd.DataFrame) -> go.Figure:
     fig.add_bar(x=o["option"], y=o["response_sl"], name="Response SLA (simulated)",
                 marker=dict(color=[SERIES[0] if x.startswith("B") else "#cfcec9" for x in o["option"]],
                             cornerradius=4),
-                text=[f"{v:.1%}<br>{int(c / 1000):,}k EUR yr 1" for v, c in zip(o["response_sl"],
-                                                                         o["first_year_cost_eur"])],
+                text=[f"<b>{v:.1%}</b><br>€{c / 1000:,.0f}k year-1 cost" for v, c in zip(o["response_sl"],
+                                                                                o["first_year_cost_eur"])],
                 textposition="outside", textfont=dict(size=11, color=TEXT),
                 customdata=np.c_[o["fte"], o["one_off_cost_eur"], o["annual_cost_change_eur"], o["what_changes"]],
                 hovertemplate="%{x}<br>%{customdata[3]}<br>Response SLA %{y:.1%} · %{customdata[0]} FTE<br>"
-                              "One-off %{customdata[1]:,.0f} EUR · recurring %{customdata[2]:+,.0f} EUR/yr"
+                              "One-off €%{customdata[1]:,.0f} · recurring €%{customdata[2]:+,.0f}/yr"
                               "<extra></extra>")
     fig.update_yaxes(tickformat=".0%", range=[0.80, 0.92])
     return _style(fig, "Options: response SLA and first-year cost",
