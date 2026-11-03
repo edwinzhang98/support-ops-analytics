@@ -39,7 +39,7 @@ checks AS (
     UNION ALL
     SELECT 7, 'Time range', 'Calendar days in 2023 with zero tickets',
            (365 - count(DISTINCT created_date))::DOUBLE, NULL,
-           'INFO: consistent with Poisson arrivals at ~3.4/day on weekends' FROM f
+           'INFO: 1 Jan and 31 Dec are outside the export window; 24-26 Dec are holidays; the other 4 (8 Apr, 27 Apr, 27 May, 15 Oct) are low-volume days' FROM f
     UNION ALL
     SELECT 8, 'Time range', 'Hours from last ticket created to snapshot (latest timestamp)',
            round(date_diff('minute', max(created_at), max(snapshot_at)) / 60.0, 1)::DOUBLE, NULL,

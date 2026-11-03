@@ -2,7 +2,7 @@
 -- 03_breach_hotspots.sql  ·  Where are SLA breaches concentrated?
 -- -----------------------------------------------------------------------------
 -- Input : fct_tickets (variable `fct_tickets_path`)
--- Output: one row per (sla_type, 2- or 3-way combination of dimensions) with
+-- Output: one row per (sla_type, 1-, 2- or 3-way combination of dimensions) with
 --         n >= 30 tickets: breach rate, Wilson 95% CI, overall rate, lift and
 --         "excess breaches" = breaches above what the overall rate predicts.
 --         Multiple-testing correction (Benjamini-Hochberg) is applied in Python
@@ -44,7 +44,9 @@ labelled AS (
         -- number of dimensions in the combination = 7 - bits set in the grouping id
         7 - bit_count(gid::INTEGER)                                AS n_dims,
         concat_ws(' + ',
-            day_of_week, hour_band, channel, priority || ' priority', topic, agent_group, product_group) AS combination
+            day_of_week, hour_band, channel, priority || ' priority',
+            CASE WHEN topic = 'Other' THEN 'Other topic' ELSE topic END, agent_group,
+            CASE WHEN product_group = 'Other' THEN 'Other product' ELSE product_group END) AS combination
     FROM cube
 )
 SELECT
@@ -61,4 +63,4 @@ FROM labelled l
 JOIN overall o USING (sla_type)
 WHERE l.n_dims BETWEEN 1 AND 3
   AND l.n >= 30
-ORDER BY l.sla_type, excess_breaches DESC
+ORDER BY l.sla_type, excess_breaches DESC, l.combination

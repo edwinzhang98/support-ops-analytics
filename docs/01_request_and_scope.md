@@ -37,7 +37,7 @@ The standard outputs for this kind of request are an operations KPI view, a root
 |---|---|
 | Volume grew materially (> ~10%) and breaches rise with load | **Hire** (the capacity gap is real and growing) |
 | Volume flat, but demand and roster are misaligned by hour/day | **Re-roster** before hiring |
-| Volume flat, breaches spread across all segments, not load-driven | **Process fixes** (find what changed); headcount won't fix it |
+| Volume flat, breaches spread across all segments, not load-driven | **Process fixes** (find what changed); the data would not support headcount as the fix |
 | A few high-volume, low-complexity topics dominate | **Automation / self-service** |
 
 ## Scope

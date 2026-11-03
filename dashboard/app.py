@@ -16,8 +16,7 @@ st.set_page_config(page_title="Support Ops Analytics", page_icon=":material/supp
 
 PAGES = Path(__file__).resolve().parent / "pages"
 nav = st.navigation([
-    st.Page(PAGES / "1_overview.py", title="Overview", icon=":material/space_dashboard:", default=True,
-            url_path="overview"),
+    st.Page(PAGES / "1_overview.py", title="Overview", icon=":material/space_dashboard:", default=True),
     st.Page(PAGES / "2_data_sanity.py", title="Data & Sanity Checks", icon=":material/fact_check:",
             url_path="data-and-sanity-checks"),
     st.Page(PAGES / "3_volume.py", title="Volume Patterns", icon=":material/calendar_view_week:",

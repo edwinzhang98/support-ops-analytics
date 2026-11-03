@@ -165,11 +165,14 @@ def stale_backlog(fct: pd.DataFrame, backlog: pd.DataFrame, aged_days: float = 7
     active = backlog["open_active"]
     # Little's law check: arrivals/day x average days a ticket counts as "active" (capped at the aged threshold)
     days_active = np.where(fct["is_resolved"], np.minimum(fct["resolution_h"] / 24, aged_days), aged_days)
-    littles = len(fct) / fct["created_date"].nunique() * days_active.mean()
+    days_window = (fct["created_date"].max() - fct["created_date"].min()).days + 1
+    littles = len(fct) / days_window * days_active.mean()      # arrivals per calendar day x days active
     return {
         "never_resolved": int(len(never)), "never_resolved_share": len(never) / len(fct),
         "never_resolved_share_of_breaches": len(never) / breaches,
         "never_resolved_median_age_days": float(never["age_at_snapshot_days"].median()),
+        "never_resolved_age_p25_days": float(never["age_at_snapshot_days"].quantile(0.25)),
+        "never_resolved_age_p75_days": float(never["age_at_snapshot_days"].quantile(0.75)),
         "never_resolved_by_status": never["status"].value_counts().to_dict(),
         "open_at_snapshot": int(backlog["open_total"].iloc[-1]),
         "aged_at_snapshot": int(backlog["open_aged"].iloc[-1]),
@@ -215,3 +218,16 @@ def recovery_scenario(fct: pd.DataFrame) -> dict:
             "never_share_h2": float(h.loc["H2", "Unresolved, overdue"]),
             "on_time_h1": float(h.loc["H1", "Resolved within SLA"]), "on_time_h2": float(on_h2),
             "on_time_h2_if_late_back_to_h1": float(on_h2 + (late_h2 - late_h1))}
+
+
+def monthly_seasonality_p(fct: pd.DataFrame) -> float:
+    """Chi-square goodness of fit: monthly ticket counts vs counts expected from each month's
+    weekday mix (weekday and weekend rates from the whole year, days in the export window only)."""
+    days = pd.DataFrame({"date": pd.date_range(fct["created_date"].min(), fct["created_date"].max())})
+    counts = fct.groupby("created_date").size()
+    days["n"] = days["date"].map(counts).fillna(0)
+    days["weekend"] = days["date"].dt.day_of_week >= 5
+    rate = days.groupby("weekend")["n"].mean()
+    days["exp"] = days["weekend"].map(rate)
+    by_m = days.groupby(days["date"].dt.month)[["n", "exp"]].sum()
+    return float(stats.chisquare(by_m["n"], by_m["exp"] * by_m["n"].sum() / by_m["exp"].sum()).pvalue)

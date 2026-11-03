@@ -147,7 +147,7 @@ def run(verbose: bool = True) -> dict:
     return kn
 
 
-def _r(x, d=4):
+def _r(x, d=6):
     return None if x is None or (isinstance(x, float) and np.isnan(x)) else round(float(x), d)
 
 
@@ -180,11 +180,20 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
 
     h_none, h_none_capped = holds(g_none)
     h_base, h_base_capped = holds(g_base)
+
+    def within_1pt(g):
+        """Largest tested growth at which simulated response SLA (optimistic rule) is within 1 point of
+        its no-growth level: the early-warning threshold."""
+        ok = (g["response_sl"] >= g["response_sl"].iloc[0] - 0.01).to_numpy()
+        n_ok = len(ok) if ok.all() else int(np.argmin(ok))
+        return float(g.index[n_ok - 1] - 1) if n_ok else 0.0
     sim_wd = cp_wd["sim_summary"].set_index("roster")
     hire_wd = cp_wd["hire_options"].set_index("hypothesis")
     late_tbl = fct[(fct["channel"] == "Email") & (fct["response_sla_met"] == False)]  # noqa: E712
     late_min = late_tbl["frt_min"] - late_tbl["response_target_min"]
     days_window = (fct["created_date"].max() - fct["created_date"].min()).days + 1
+    wk = fct.set_index("created_at").resample("W-SUN").size()
+    weekly = wk.iloc[1:-1]          # complete Monday-Sunday weeks only
 
     kn = {
         # --- data -----------------------------------------------------------------
@@ -212,8 +221,11 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "volume_h1": int((fct.created_half == "H1").sum()), "volume_h2": int((fct.created_half == "H2").sum()),
         "volume_change_h2_vs_h1": _r((fct.created_half == "H2").sum() / (fct.created_half == "H1").sum() - 1),
         "volume_monthly_min": int(m["tickets"].min()), "volume_monthly_max": int(m["tickets"].max()),
-        "weekend_to_weekday_volume": _r(weekend["created_weekend_to_weekday"], 3),
-        "weekend_to_weekday_resolutions": _r(weekend["resolved_weekend_to_weekday"], 3),
+        "volume_weekly_mean": _r(weekly.mean(), 1), "volume_weekly_min": int(weekly.min()),
+        "volume_weekly_max": int(weekly.max()),
+        "volume_month_seasonality_p": _r(rca.monthly_seasonality_p(fct), 3),
+        "weekend_to_weekday_volume": _r(weekend["created_weekend_to_weekday"]),
+        "weekend_to_weekday_resolutions": _r(weekend["resolved_weekend_to_weekday"]),
         "pareto_top20pct_topics_n": int(np.ceil(0.2 * len(pt))),
         "pareto_top20pct_topics_share": _r(pt.sort_values("rank")["share"].head(int(np.ceil(0.2 * len(pt)))).sum()),
         "pareto_top20pct_combos_n": int(np.ceil(0.2 * len(ptp))), "pareto_combos_total": int(len(ptp)),
@@ -254,13 +266,13 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "share_resolved_over_48h_h2": _r(bd.loc[("half", "H2"), "share_resolved_over_48h"]),
         # --- root cause --------------------------------------------------------------------------
         "rca_mix_effect_q1_q4_channel_pp": _r(100 * k["kpi_rca_decomposition"].query(
-            "sla_type=='resolution' and comparison=='Q1 -> Q4' and dimension=='channel'")["mix_effect"].sum(), 2),
+            "sla_type=='resolution' and comparison=='Q1 -> Q4' and dimension=='channel'")["mix_effect"].sum(), 4),
         "rca_rate_effect_q1_q4_channel_pp": _r(100 * k["kpi_rca_decomposition"].query(
-            "sla_type=='resolution' and comparison=='Q1 -> Q4' and dimension=='channel'")["rate_effect"].sum(), 2),
+            "sla_type=='resolution' and comparison=='Q1 -> Q4' and dimension=='channel'")["rate_effect"].sum(), 4),
         "rca_mix_effect_q1_q4_topic_pp": _r(100 * k["kpi_rca_decomposition"].query(
-            "sla_type=='resolution' and comparison=='Q1 -> Q4' and dimension=='topic'")["mix_effect"].sum(), 2),
+            "sla_type=='resolution' and comparison=='Q1 -> Q4' and dimension=='topic'")["mix_effect"].sum(), 4),
         "rca_rate_effect_q1_q4_topic_pp": _r(100 * k["kpi_rca_decomposition"].query(
-            "sla_type=='resolution' and comparison=='Q1 -> Q4' and dimension=='topic'")["rate_effect"].sum(), 2),
+            "sla_type=='resolution' and comparison=='Q1 -> Q4' and dimension=='topic'")["rate_effect"].sum(), 4),
         "rca_on_time_share_h1": _r(recov["on_time_h1"]), "rca_on_time_share_h2": _r(recov["on_time_h2"]),
         "rca_late_share_h1": _r(recov["late_share_h1"]), "rca_late_share_h2": _r(recov["late_share_h2"]),
         "rca_never_share_h1": _r(recov["never_share_h1"]), "rca_never_share_h2": _r(recov["never_share_h2"]),
@@ -286,14 +298,16 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "late_chat_breach_median_min_late": _r(late.set_index("channel").loc["Chat", "median_minutes_late"], 2),
         "late_phone_breach_median_min_late": _r(late.set_index("channel").loc["Phone", "median_minutes_late"], 2),
         "email_breaches": int(alert["email_breaches"]),
-        "email_alert_uplift_pp_low": _r(alert["table"]["uplift_pp"].iloc[0], 2),
-        "email_alert_uplift_pp_base": _r(alert["table"]["uplift_pp"].iloc[1], 2),
-        "email_alert_uplift_pp_high": _r(alert["table"]["uplift_pp"].iloc[2], 2),
+        "email_alert_uplift_pp_low": _r(alert["table"]["uplift_pp"].iloc[0], 4),
+        "email_alert_uplift_pp_base": _r(alert["table"]["uplift_pp"].iloc[1], 4),
+        "email_alert_uplift_pp_high": _r(alert["table"]["uplift_pp"].iloc[2], 4),
         "email_alert_response_sla_base": _r(alert["table"]["response_sl_after"].iloc[1]),
         "email_alert_response_sla_high": _r(alert["table"]["response_sl_after"].iloc[2]),
         "stale_never_resolved": stale["never_resolved"], "stale_share_of_tickets": _r(stale["never_resolved_share"]),
         "stale_share_of_resolution_breaches": _r(stale["never_resolved_share_of_breaches"]),
         "stale_median_age_days": _r(stale["never_resolved_median_age_days"], 0),
+        "stale_age_p25_days": _r(stale["never_resolved_age_p25_days"], 0),
+        "stale_age_p75_days": _r(stale["never_resolved_age_p75_days"], 0),
         "stale_in_progress": int(stale["never_resolved_by_status"].get("In progress", 0)),
         "stale_open_no_response": int(stale["never_resolved_by_status"].get("Open", 0)),
         "active_backlog_mean": _r(stale["active_backlog_mean"], 1), "active_backlog_max": stale["active_backlog_max"],
@@ -312,8 +326,13 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "staff_fte_current": cp["fte_current"], "staff_weekly_shifts": cp["weekly_shifts_current"],
         "staff_peak_scheduled": int(cp["requirement"]["scheduled_required"].max()),
         "staff_min_scheduled": int(cp["requirement"]["scheduled_required"].min()),
-        "staff_weekday_scheduled": int(cp["requirement"].query("dow < 5")["scheduled_required"].median()),
-        "staff_weekend_scheduled": int(cp["requirement"].query("dow >= 5")["scheduled_required"].median()),
+        "staff_weekday_scheduled_min": int(cp["requirement"].query("dow < 5")["scheduled_required"].min()),
+        "staff_weekday_scheduled_max": int(cp["requirement"].query("dow < 5")["scheduled_required"].max()),
+        "staff_weekday_scheduled_mean": _r(cp["requirement"].query("dow < 5")["scheduled_required"].mean(), 2),
+        "staff_weekend_scheduled_min": int(cp["requirement"].query("dow >= 5")["scheduled_required"].min()),
+        "staff_weekend_scheduled_max": int(cp["requirement"].query("dow >= 5")["scheduled_required"].max()),
+        "staff_weekend_scheduled_mean": _r(cp["requirement"].query("dow >= 5")["scheduled_required"].mean(), 2),
+        "staff_min_shifts": int(cp["min_shifts_demand_shaped"]),
         "staff_hours_binding_workload": int((cp["requirement"]["binding"] == "workload / occupancy cap").sum()),
         "staff_hours_binding_live": int((cp["requirement"]["binding"] == "live response").sum()),
         "staff_process_ceiling": _r(floor),
@@ -324,10 +343,10 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "staff_sl_hire_by_day": _r(sim.loc["hire_by_day", "response_sl"]),
         "staff_queue_sl_today_by_day": _r(sim.loc["by_day", "queue_sl"]),
         "staff_queue_sl_proposed": _r(sim.loc["proposed", "queue_sl"]),
-        "staff_gain_pp_vs_by_day": _r(100 * (sim.loc["proposed", "response_sl"] - sim.loc["by_day", "response_sl"]), 2),
-        "staff_gain_pp_vs_flat": _r(100 * (sim.loc["proposed", "response_sl"] - sim.loc["flat", "response_sl"]), 2),
+        "staff_gain_pp_vs_by_day": _r(100 * (sim.loc["proposed", "response_sl"] - sim.loc["by_day", "response_sl"]), 4),
+        "staff_gain_pp_vs_flat": _r(100 * (sim.loc["proposed", "response_sl"] - sim.loc["flat", "response_sl"]), 4),
         "staff_gain_pp_vs_business_hours": _r(100 * (sim.loc["proposed", "response_sl"]
-                                                     - sim.loc["business_hours", "response_sl"]), 2),
+                                                     - sim.loc["business_hours", "response_sl"]), 4),
         "staff_hours_under_today_by_day": int(hire.loc["by_day", "hours_under_covered_today"]),
         "staff_hours_under_today_business_hours": int(hire.loc["business_hours", "hours_under_covered_today"]),
         "staff_hire_extra_fte_by_day": int(hire.loc["by_day", "extra_fte"]),
@@ -340,19 +359,19 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "staff_sl_sum_proposed": _r(sim.loc["proposed", "response_sl_sum"]),
         "staff_sl_sum_hire_by_day": _r(sim.loc["hire_by_day", "response_sl_sum"]),
         "staff_gain_pp_vs_by_day_sum": _r(100 * (sim.loc["proposed", "response_sl_sum"]
-                                                 - sim.loc["by_day", "response_sl_sum"]), 2),
+                                                 - sim.loc["by_day", "response_sl_sum"]), 4),
         "staff_hire_minus_reroster_pp": _r(100 * (sim.loc["hire_by_day", "response_sl"]
-                                                  - sim.loc["proposed", "response_sl"]), 2),
+                                                  - sim.loc["proposed", "response_sl"]), 4),
         "staff_hire_minus_reroster_pp_sum": _r(100 * (sim.loc["hire_by_day", "response_sl_sum"]
-                                                      - sim.loc["proposed", "response_sl_sum"]), 2),
+                                                      - sim.loc["proposed", "response_sl_sum"]), 4),
         "staff_hours_under_today_flat": int(hire.loc["flat", "hours_under_covered_today"]),
         "deferred_fte": int(cp_wd["fte_current"]),
         "deferred_sl_today_by_day": _r(sim_wd.loc["by_day", "response_sl"]),
         "deferred_sl_proposed": _r(sim_wd.loc["proposed", "response_sl"]),
         "deferred_gain_pp_vs_by_day": _r(100 * (sim_wd.loc["proposed", "response_sl"]
-                                                - sim_wd.loc["by_day", "response_sl"]), 2),
+                                                - sim_wd.loc["by_day", "response_sl"]), 4),
         "deferred_gain_pp_vs_by_day_sum": _r(100 * (sim_wd.loc["proposed", "response_sl_sum"]
-                                                    - sim_wd.loc["by_day", "response_sl_sum"]), 2),
+                                                    - sim_wd.loc["by_day", "response_sl_sum"]), 4),
         "deferred_hours_under_today_by_day": int(hire_wd.loc["by_day", "hours_under_covered_today"]),
         "email_breach_near_miss_share": _r(((late_min > 0) & (late_min <= 60)).sum() / len(late_tbl)),
         "email_breach_never_answered": int(late_tbl["frt_min"].isna().sum()),
@@ -377,6 +396,10 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "growth_holds_until_with_deflection": _r(h_base, 2),
         "growth_holds_until_with_deflection_is_range_end": h_base_capped,
         "growth_max_tested": _r(float(growth["volume_factor"].max()) - 1, 2),
+        "growth_sl_within_1pt_no_deflection": _r(within_1pt(g_none), 2),
+        "growth_sl_within_1pt_with_deflection": _r(within_1pt(g_base), 2),
+        "growth_sl_at_plus10_no_deflection": _r(g_none.loc[1.10, "response_sl"]) if 1.10 in g_none.index else None,
+        "growth_sl_at_plus25_no_deflection": _r(g_none.loc[1.25, "response_sl"]) if 1.25 in g_none.index else None,
         # --- automation ----------------------------------------------------------------------------
         "auto_deflected_share_low": _r(a_sum.loc["low", "deflected_share_of_tickets"]),
         "auto_deflected_share_base": _r(a_sum.loc["base", "deflected_share_of_tickets"]),
@@ -394,6 +417,8 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
         "bc_hire_annual_cost_eur": int(opt.loc["A. Hire", "annual_cost_change_eur"]),
         "bc_hire_one_off_eur": int(opt.loc["A. Hire", "one_off_cost_eur"]),
         "bc_hire_first_year_eur": int(opt.loc["A. Hire", "first_year_cost_eur"]),
+        "bc_hire_first_year_whole_hires_eur": int(hire.loc["by_day", "extra_fte"] * (cfg["cost"]["fte_annual_eur"]
+                                                                                  + cfg["cost"]["hire_one_off_eur"])),
         "bc_hire_sl": _r(opt.loc["A. Hire", "response_sl"]),
         "bc_reroster_sl": _r(opt.loc["B. Re-roster", "response_sl"]),
         "bc_automate_sl": _r(opt.loc["C. Automate", "response_sl"]),
@@ -411,14 +436,14 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
     sb = pd.read_parquet(processed_path("kpi_by_dimension_synth.parquet"))
     mrg = vb.merge(sb, on=["dimension", "segment"], suffixes=("_real", "_synth"))
     mrg = mrg[mrg.dimension.isin(["channel", "topic", "priority"])]
-    kn["synth_max_mix_gap_pp"] = _r(100 * (mrg["share_of_tickets_real"] - mrg["share_of_tickets_synth"]).abs().max(), 2)
+    kn["synth_max_mix_gap_pp"] = _r(100 * (mrg["share_of_tickets_real"] - mrg["share_of_tickets_synth"]).abs().max(), 4)
     kn["synth_resolution_sla"] = _r(tickets["resolution_sla_met"].mean())
     w = reps.pivot(index="replication", columns="roster", values="response_sl")
     gain = 100 * (w["proposed"] - w["by_day"])
     kn["rep_n"] = int(len(w))
-    kn["rep_gain_pp_vs_by_day_mean"] = _r(gain.mean(), 2)
-    kn["rep_gain_pp_vs_by_day_min"] = _r(gain.min(), 2)
-    kn["rep_gain_pp_vs_by_day_max"] = _r(gain.max(), 2)
+    kn["rep_gain_pp_vs_by_day_mean"] = _r(gain.mean(), 4)
+    kn["rep_gain_pp_vs_by_day_min"] = _r(gain.min(), 4)
+    kn["rep_gain_pp_vs_by_day_max"] = _r(gain.max(), 4)
     kn["rep_sl_proposed_min"] = _r(w["proposed"].min())
     kn["rep_sl_proposed_max"] = _r(w["proposed"].max())
     kn["rep_sl_by_day_min"] = _r(w["by_day"].min())
@@ -426,13 +451,13 @@ def key_numbers(cfg, fct, dq, k, comp, load, slots, late, alert, het, cp_on, cp_
     kn["rep_ranking_stable"] = bool(((w["proposed"] > w["by_day"]) & (w["by_day"] > w["business_hours"])).all())
     ws = reps.pivot(index="replication", columns="roster", values="response_sl_sum")
     gs = 100 * (ws["proposed"] - ws["by_day"])
-    kn["rep_gain_pp_vs_by_day_sum_min"] = _r(gs.min(), 2)
-    kn["rep_gain_pp_vs_by_day_sum_max"] = _r(gs.max(), 2)
+    kn["rep_gain_pp_vs_by_day_sum_min"] = _r(gs.min(), 4)
+    kn["rep_gain_pp_vs_by_day_sum_max"] = _r(gs.max(), 4)
     hp = 100 * (w["hire_by_day"] - w["proposed"])
-    kn["rep_hire_minus_reroster_pp_min"] = _r(hp.min(), 2)
-    kn["rep_hire_minus_reroster_pp_max"] = _r(hp.max(), 2)
+    kn["rep_hire_minus_reroster_pp_min"] = _r(hp.min(), 4)
+    kn["rep_hire_minus_reroster_pp_max"] = _r(hp.max(), 4)
     hps = 100 * (ws["hire_by_day"] - ws["proposed"])
-    kn["rep_hire_minus_reroster_pp_sum_min"] = _r(hps.min(), 2)
-    kn["rep_hire_minus_reroster_pp_sum_max"] = _r(hps.max(), 2)
+    kn["rep_hire_minus_reroster_pp_sum_min"] = _r(hps.min(), 4)
+    kn["rep_hire_minus_reroster_pp_sum_max"] = _r(hps.max(), 4)
     kn["rep_ranking_stable_sum"] = bool(((ws["proposed"] > ws["by_day"]) & (ws["by_day"] > ws["business_hours"])).all())
     return kn

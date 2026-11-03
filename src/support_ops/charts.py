@@ -45,6 +45,8 @@ def _style(fig: go.Figure, title: str, takeaway: str, source: str, x_title: str 
     top = 74 + 19 * len(lines)                       # room for title + wrapped takeaway + source line
     bottom = (92 if x_title else 64) if legend else (58 if x_title else 40)
     fig.update_layout(
+        template="plotly",          # Streamlit swaps plotly's default template process-wide; pin ours
+        colorway=SERIES,
         title=dict(text=f"<b>{title}</b>", x=0, xanchor="left", yref="container", y=1, yanchor="top",
                    pad=dict(t=14), font=dict(size=16, color=TEXT),
                    subtitle=dict(text="<br>".join(lines) + f"<br><span style='color:{NEUTRAL}'>{source}</span>",
@@ -60,9 +62,9 @@ def _style(fig: go.Figure, title: str, takeaway: str, source: str, x_title: str 
     )
     fig.update_xaxes(title=dict(text=x_title, font=dict(size=12, color=TEXT_2)), showgrid=False,
                      linecolor=AXIS, ticks="outside", tickcolor=AXIS, tickfont=dict(color=TEXT_2),
-                     zeroline=False)
+                     zeroline=False, automargin=True)
     fig.update_yaxes(title=dict(text=y_title, font=dict(size=12, color=TEXT_2)), gridcolor=GRID,
-                     gridwidth=1, linecolor=AXIS, tickfont=dict(color=TEXT_2), zeroline=False)
+                     gridwidth=1, linecolor=AXIS, tickfont=dict(color=TEXT_2), zeroline=False, automargin=True)
     return fig
 
 
@@ -78,10 +80,12 @@ def pct(x, d=0):
 # ---------------------------------------------------------------------------
 # Volume patterns  [REAL]
 # ---------------------------------------------------------------------------
-def fig_monthly_volume(monthly: pd.DataFrame) -> go.Figure:
+def fig_monthly_volume(monthly: pd.DataFrame, window_start: str = "2023-01-02",
+                       window_end: str = "2023-12-30") -> go.Figure:
     m = monthly.copy()
     m["month"] = pd.to_datetime(m["created_month"])
-    days = m["month"].dt.days_in_month
+    window = pd.Series(pd.date_range(window_start, window_end, freq="D"))
+    days = m["month"].map(window.dt.to_period("M").dt.to_timestamp().value_counts()).astype(float)
     m["per_day"] = m["tickets"] / days
     se = np.sqrt(m["tickets"]) / days                     # Poisson standard error
     fig = go.Figure(go.Bar(
@@ -90,11 +94,14 @@ def fig_monthly_volume(monthly: pd.DataFrame) -> go.Figure:
         customdata=np.c_[m["tickets"]],
         hovertemplate="%{x|%b %Y}<br>%{y:.1f} tickets/day (%{customdata[0]} in month)<extra></extra>"))
     avg = m["tickets"].sum() / days.sum()
-    _goal_line(fig, avg, f"2023 average {avg:.1f}/day")
+    fig.add_hline(y=avg, line=dict(color=GOAL, width=1), annotation_text=f"2023 average {avg:.1f}/day",
+                  annotation_position="top right", annotation_font=dict(size=11, color=TEXT_2))
     fig.update_xaxes(dtick="M1", tickformat="%b")
+    inside = int(((m["per_day"] - 1.96 * se <= avg) & (m["per_day"] + 1.96 * se >= avg)).sum())
     return _style(fig, "Tickets per day, by month",
-                  "Volume did not grow: every month sits within noise of the 6.4/day average "
-                  "(bars = 95% Poisson interval).", REAL, "", "Tickets per day", legend=False)
+                  f"Volume did not grow: month-to-month variation is no larger than chance ({inside} of {len(m)} "
+                  f"months' 95% Poisson intervals include the {avg:.1f}/day average).", REAL, "", "Tickets per day",
+                  legend=False)
 
 
 def fig_volume_heatmap(heat: pd.DataFrame, value: str = "tickets_per_week") -> go.Figure:
@@ -105,8 +112,10 @@ def fig_volume_heatmap(heat: pd.DataFrame, value: str = "tickets_per_week") -> g
         xgap=2, ygap=2, colorbar=dict(title=dict(text=label, side="right"), thickness=10, outlinewidth=0),
         hovertemplate="%{y} %{x}:00<br>%{z:.2f} " + label.lower() + "<extra></extra>"))
     fig.update_yaxes(autorange="reversed", showgrid=False)
+    per_day = heat.groupby("dow_name")[value].sum()
+    ratio = per_day.reindex(DAYS[:5]).mean() / max(per_day.reindex(DAYS[5:]).mean(), 1e-9)
     return _style(fig, "When tickets arrive: day of week x hour of day",
-                  "Weekdays carry ~2.2x the weekend volume; within a day arrivals are almost flat "
+                  f"Weekdays carry {ratio:.1f}x the weekend volume; within a day arrivals are almost flat "
                   "(no business-hours peak).", REAL, "Hour of day (ticket created)", "", height=380,
                   legend=False)
 
@@ -155,8 +164,11 @@ def fig_channel_mix(m: pd.DataFrame) -> go.Figure:
     fig.update_layout(barmode="stack", bargap=0.25)
     fig.update_yaxes(tickformat=".0%", range=[0, 1])
     fig.update_xaxes(dtick="M1", tickformat="%b")
+    avg = m.groupby("channel")["share"].mean()
+    lo, hi = m.groupby("channel")["share"].min(), m.groupby("channel")["share"].max()
+    txt = ", ".join(f"{c.lower()} {avg[c]:.0%} ({lo[c]:.0%}-{hi[c]:.0%})" for c in ["Email", "Chat", "Phone"])
     return _style(fig, "Channel mix by month",
-                  "Email ~53%, chat ~36%, phone ~11% every month - the mix did not shift.", REAL,
+                  f"Monthly shares stay in a narrow band - {txt} - so the mix did not shift.", REAL,
                   "", "Share of tickets (%)")
 
 
@@ -207,9 +219,13 @@ def fig_resolution_composition(comp: pd.DataFrame) -> go.Figure:
     fig.update_layout(barmode="stack", bargap=0.25)
     fig.update_yaxes(tickformat=".0%", range=[0, 1])
     fig.update_xaxes(dtick="M1", tickformat="%b")
+    h1, h2 = c[c["month"].dt.month <= 6], c[c["month"].dt.month > 6]
+    w = lambda d, col: (d[col] * d["tickets"]).sum() / d["tickets"].sum()  # noqa: E731
     return _style(fig, "What happened to each month's tickets",
-                  "The decline is 'resolved late' growing from ~7% to ~23% of tickets; 'never resolved' "
-                  "is a constant ~13-23% every month.", REAL, "Month created", "Share of tickets created (%)")
+                  f"The decline is 'resolved late' growing from {w(h1, 'share_resolved_late'):.0%} (H1) to "
+                  f"{w(h2, 'share_resolved_late'):.0%} (H2) of tickets; 'never resolved' stays between "
+                  f"{c['share_never_resolved'].min():.0%} and {c['share_never_resolved'].max():.0%} every month.",
+                  REAL, "Month created", "Share of tickets created (%)")
 
 
 def fig_resolution_time_hist(fct: pd.DataFrame) -> go.Figure:
@@ -259,7 +275,10 @@ def fig_breakdown(bydim: pd.DataFrame, dimension: str, sla: str = "resolution",
                   height=max(300, 120 + 38 * len(d)), legend=False)
 
 
-def fig_hotspots(hot: pd.DataFrame, sla: str = "response", top: int = 12) -> go.Figure:
+def fig_hotspots(hot: pd.DataFrame, sla: str = "response", top: int = 12, n_tested: int | None = None,
+                 n_significant: int | None = None) -> go.Figure:
+    """hot: kpi_hotspots (or a filtered slice of it). Pass n_tested / n_significant from the FULL table
+    when plotting a filtered slice, so the subtitle still describes the whole scan."""
     h = hot[hot["sla_type"] == sla].sort_values("excess_breaches", ascending=False).head(top)
     h = h.iloc[::-1]
     colors = [SERIES[1] if s else "#cfcec9" for s in h["significant_fdr5"]]
@@ -276,9 +295,9 @@ def fig_hotspots(hot: pd.DataFrame, sla: str = "response", top: int = 12) -> go.
                   annotation_font=dict(size=11, color=TEXT_2))
     fig.update_xaxes(tickformat=".0%", showgrid=True, gridcolor=GRID)
     fig.update_yaxes(showgrid=False, tickfont=dict(size=11))
-    n_sig = int(hot.loc[hot.sla_type == sla, "significant_fdr5"].sum())
-    n_test = int((hot.sla_type == sla).sum())
-    msg = (f"{n_sig} of {n_test} combinations survive a false-discovery-rate check (orange). "
+    n_sig = int(hot.loc[hot.sla_type == sla, "significant_fdr5"].sum()) if n_significant is None else n_significant
+    n_test = int((hot.sla_type == sla).sum()) if n_tested is None else n_tested
+    msg = (f"{n_sig} of {n_test} combinations tested survive a false-discovery-rate check (orange). "
            + ("All involve Phone, the channel with a 2-minute target." if sla == "response" and n_sig
               else "Breaches are spread evenly - no combination stands out."))
     return _style(fig, f"Where {sla} SLA breaches concentrate (top {top} by excess breaches)",
@@ -303,8 +322,9 @@ def fig_agent_scorecard(agents: pd.DataFrame, sla: str = "resolution") -> go.Fig
                   annotation_font=dict(size=11, color=TEXT_2))
     fig.update_xaxes(tickformat=".0%", showgrid=True, gridcolor=GRID)
     fig.update_yaxes(showgrid=False)
+    overlap = int(((a[f"{col}_lo"] <= team) & (a[f"{col}_hi"] >= team)).sum())
     return _style(fig, f"{sla.title()} SLA attainment by agent (current ticket owner)",
-                  "Intervals overlap for 7 of 8 agents; the decline is team-wide, not a few people. "
+                  f"{overlap} of {len(a)} agents' intervals include the team average: differences are mostly noise. "
                   "Agent = current owner, so use for coaching, not ratings.", REAL, "Tickets meeting SLA (%)", "",
                   height=420)
 
@@ -320,8 +340,10 @@ def fig_breach_lateness(fct: pd.DataFrame) -> go.Figure:
                     jitter=0.4, pointpos=0, hovertemplate="%{x:.1f} min late<extra>" + ch + "</extra>")
     fig.update_xaxes(type="log", tickvals=[0.1, 1, 2, 5, 15, 60, 240, 1440],
                      ticktext=["0.1", "1", "2", "5", "15", "60", "240", "1,440"], showgrid=True, gridcolor=GRID)
+    med = b.groupby("channel")["late"].median()
     return _style(fig, "How late are first-response breaches?",
-                  "Chat/phone breaches are ~2 minutes late (slow pickup); email breaches are ~3.5 hours late "
+                  f"Chat/phone breaches are a median {med.get('Chat', np.nan):.1f}/{med.get('Phone', np.nan):.1f} "
+                  f"minutes late (slow pickup); email breaches {med.get('Email', np.nan) / 60:.1f} hours late "
                   "(missed, not queued). Neither looks like a queue of tickets waiting for agents.",
                   REAL, "Minutes past the response target (log scale)", "", height=360, legend=False)
 
@@ -361,7 +383,7 @@ def fig_backlog(backlog: pd.DataFrame, aged_days: int = 7) -> go.Figure:
                     hovertemplate="%{x|%d %b}: %{y} aged<extra></extra>")
     return _style(fig, "Open tickets at the end of each day",
                   f"The backlog grows only because of aged tickets nobody closes; active work stays at "
-                  f"~{b['open_active'].mean():.0f} tickets (max {b['open_active'].max()}).", REAL, "",
+                  f"~{b['open_active'].mean():.0f} tickets (max {int(b['open_active'].max())}).", REAL, "",
                   "Open tickets")
 
 
@@ -556,7 +578,8 @@ def fig_automation_matrix(profile: pd.DataFrame) -> go.Figure:
     p = profile.copy()
     fig = go.Figure(go.Scatter(
         x=p["share"], y=p["complexity_index"], mode="markers+text", text=p["topic"],
-        textposition=[{"Other": "top left", "Bug report": "bottom right"}.get(t, "top center") for t in p["topic"]],
+        textposition=[{"Other": "top left", "Bug report": "top right",
+                       "Purchasing and invoicing": "bottom center"}.get(t, "top center") for t in p["topic"]],
         textfont=dict(size=11, color=TEXT),
         marker=dict(size=10 + 60 * p["deflection_base"], color=_rgba(SERIES[0], 0.75),
                     line=dict(color=SURFACE, width=2)),
@@ -646,8 +669,9 @@ def fig_synth_validation(real_bydim: pd.DataFrame, synth_bydim: pd.DataFrame,
                     hovertemplate="%{x}: %{y:.1%}<extra>" + name + "</extra>")
     fig.update_yaxes(tickformat=".0%")
     gap = (v["real"] - v["synth"]).abs().max()
+    dims_txt = ", ".join(d.replace("_", " ") for d in dims)
     return _style(fig, "Synthetic scale-up vs real export: ticket mix",
-                  f"Every channel, topic and priority share matches within {gap * 100:.1f} points.",
+                  f"Every {dims_txt} share matches within {gap * 100:.1f} points.",
                   "REAL vs SYNTHETIC", "", "Share of tickets (%)", height=420)
 
 

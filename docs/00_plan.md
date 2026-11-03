@@ -42,6 +42,13 @@ Why we scale up: the export averages 6.4 tickets/day, about 0.3 per hour. Most h
 
 ## 6. Key decisions taken at kickoff
 
+> **Changed since kickoff:** decision 3 was replaced. The export's response
+> breaches are not queue-driven, so headcount is **not** calibrated to the observed SLA. The current roster is instead
+> compared under three stated hypotheses at the same headcount (weekday-weighted = baseline, flat 24/7, day-weighted).
+> The FTE number is the requirement of a workload-matched roster, never "the current team". Response time combines
+> queue wait with the real pickup delay under an optimistic and a conservative rule. The monthly-seasonality test was
+> re-run against each month's weekday mix (p = 0.12). Details: `docs/assumptions.md`.
+
 1. **Scale factor = 20×**, giving about 47k tickets/year, about 128/day. That is "tens of thousands of tickets" and a plausible mid-size B2B desk. It is a scenario parameter in `config.yaml`, not a fact.
 2. **One synthetic year (2023), not two.** The export shows no volume trend and no significant monthly seasonality (χ² p = 0.14). A second year would have to be invented rather than calibrated.
 3. **Current roster is unknown → assumed** to be flat 3-shift, 24/7 coverage. Headcount is calibrated so the simulated response SLA matches the export's observed 2023 level. The re-roster gain depends on this assumption, so it gets its own sensitivity analysis.

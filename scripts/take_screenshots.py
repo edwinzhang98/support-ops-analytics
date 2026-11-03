@@ -18,7 +18,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "img"
 PAGES = [
-    ("overview", "01_overview"), ("data-and-sanity-checks", "02_data_sanity"),
+    ("", "01_overview"), ("data-and-sanity-checks", "02_data_sanity"),
     ("volume-patterns", "03_volume"), ("efficiency-and-sla", "04_efficiency"),
     ("backlog-diagnosis", "05_backlog"), ("staffing-model", "06_staffing"),
     ("automation-opportunities", "07_automation"), ("headcount-business-case", "08_business_case"),
@@ -57,7 +57,13 @@ def main() -> None:
                 page.wait_for_timeout(1500)
                 if t_first is None:
                     t_first = time.time() - t0
+                # Streamlit scrolls inside its main container, so grow the viewport to the content height
+                h = page.evaluate("""() => { const m = document.querySelector('section.stMain, [data-testid="stMain"]');
+                                             return m ? m.scrollHeight : document.body.scrollHeight; }""")
+                page.set_viewport_size({"width": 1440, "height": int(min(max(h, 900), 12000))})
+                page.wait_for_timeout(1200)
                 page.screenshot(path=str(OUT / f"{name}.png"), full_page=True)
+                page.set_viewport_size({"width": 1440, "height": 900})
                 print(f"saved {name}.png ({time.time() - t0:.1f}s)")
             browser.close()
         print(f"first page rendered in {t_first:.1f}s")

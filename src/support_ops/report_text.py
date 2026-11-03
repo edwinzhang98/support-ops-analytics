@@ -45,7 +45,8 @@ def recommendations(k: dict) -> list[tuple[str, str, str, str, str]]:
          "The 2023 data shows a process change, not a capacity shortfall [REAL]; hiring would mainly buy response "
          f"SLA, which is not the SLA that fell. Avoids ~€{k['bc_hire_first_year_eur'] / 1000:,.0f}k in year one "
          "for the hire option in the planning scenario [SYNTHETIC].",
-         f"Weekly volume vs 2023 (trigger: sustained > +{k['growth_holds_until_no_deflection'] * 100:.0f}%), share of "
+         f"Weekly volume vs 2023 (early warning: sustained > +{k['growth_sl_within_1pt_no_deflection'] * 100:.0f}% "
+         f"- re-run this capacity model; hard limit: +{k['growth_holds_until_no_deflection'] * 100:.0f}%), share of "
          "contacts reaching an agent within target (trigger: < 90%), agent utilisation (trigger: > 85%)",
          "Volume grows faster than expected; mitigated by the trigger and by deflection headroom"),
         ("4. Re-roster toward workload: more weekend cover, fewer weekday overlaps - after checking today's real roster",
@@ -285,16 +286,18 @@ controls, and (b) the real pickup delay observed in the export, which staffing d
 two combine, so every result is shown twice. The <b>optimistic rule</b> takes the later of the two (they overlap); the
 <b>conservative rule</b> adds them up.</p>"""),
         ("fig", "erlang_curve", "Why staffing has diminishing returns: each extra agent buys less service level than the last."),
-        ("fig", "requirement_vs_roster", f"Required people per hour: about {k['staff_weekday_scheduled']} on weekdays and "
-         f"{k['staff_weekend_scheduled']} at weekends (peak {k['staff_peak_scheduled']}). Total workload, not the 2-minute "
+        ("fig", "requirement_vs_roster", f"Required people per hour: {k['staff_weekday_scheduled_min']}-"
+         f"{k['staff_weekday_scheduled_max']} on weekdays and {k['staff_weekend_scheduled_min']}-"
+         f"{k['staff_weekend_scheduled_max']} at weekends. Total workload, not the 2-minute "
          f"live target, sets the number in {k['staff_hours_binding_workload']} of 168 hours. The export has no intraday "
          "shape, so the workload-matched roster is close to flat; what changes is the weekday/weekend balance."),
         ("fig", "gap_heatmap", f"Today's assumed roster (headcount set by new-ticket counts) is short in "
          f"{k['staff_hours_under_today_by_day']} hours, all at weekends, and carries spare people on weekdays."),
-        ("html", f"<p><b>Headcount.</b> The cheapest roster covering every hour needs <b>{k['staff_fte_current']} FTE</b> "
-                 f"({k['staff_weekly_shifts']} eight-hour shifts a week). Pure workload maths with no rounding gives "
-                 f"{k['staff_fte_continuous']:.1f}; the difference is the cost of whole people in every hour plus "
-                 "24/7 minimum cover. The simulated roster has headroom: "
+        ("html", f"<p><b>Headcount.</b> The cheapest roster covering every hour uses {k['staff_min_shifts']} eight-hour "
+                 f"shifts a week, i.e. <b>{k['staff_fte_current']} FTE</b> at five shifts per person (a "
+                 f"{k['staff_weekly_shifts']}-shift budget once rounded to whole FTE). Pure workload maths with no rounding "
+                 f"gives {k['staff_fte_continuous']:.1f} FTE; the difference is the cost of whole people in every hour, "
+                 "8-hour shift blocks and 24/7 minimum cover. The simulated roster has headroom: "
                  f"{P(k['staff_queue_sl_proposed'])} of contacts reach an agent within target, against a 90% goal.</p>"
                  "<h3>Proposed roster (people starting each shift)</h3>"),
         ("table", "roster_proposed"),
@@ -324,9 +327,12 @@ real roster and how weekend follow-ups are handled today.</p>"""),
          f"volume the answer is {k['sens_fte_scale_10x']} or {k['sens_fte_scale_40x']}. Changing the live SLA goal from 80% "
          "to 95% changes nothing, because workload binds first."),
         ("table", "sensitivity"),
-        ("fig", "growth", f"With the workload-matched roster, the same team meets the staffing goal up to "
-         f"+{k['growth_holds_until_no_deflection'] * 100:.0f}% volume. With base-case deflection it still meets it at "
-         f"+{k['growth_max_tested'] * 100:.0f}%, the top of the tested range. This is the trigger for revisiting headcount."),
+        ("fig", "growth", f"With the workload-matched roster, simulated response SLA stays within a point of today's level up to "
+         f"+{k['growth_sl_within_1pt_no_deflection'] * 100:.0f}% volume and slips after that "
+         f"({P(k['growth_sl_at_plus10_no_deflection'])} at +10%, {P(k['growth_sl_at_plus25_no_deflection'])} at +25%). "
+         f"The roster breaks the staffing goal itself at about +{k['growth_holds_until_no_deflection'] * 100:.0f}%. With "
+         f"base-case deflection the team absorbs about +{k['growth_sl_within_1pt_with_deflection'] * 100:.0f}% before "
+         "response SLA slips a point. These are the triggers for revisiting headcount."),
     ]
 
 
@@ -355,7 +361,10 @@ def _business(k):
                  "desk at 20x volume with the assumed weekday-weighted roster. Response SLA for each option comes from "
                  "simulating the same synthetic year. Costs are assumptions to confirm with Finance "
                  f"(€{k['cost_fte_annual_eur']:,} per FTE per year fully loaded). Hiring is costed in FTE-equivalents of the "
-                 "shifts actually needed. Remember the SLA these options move is response, not resolution.</p>"),
+                 f"{k['staff_hire_extra_shifts_by_day']} weekend shifts actually needed "
+                 f"(€{k['bc_hire_first_year_eur'] / 1000:,.0f}k in year one); as {k['staff_hire_extra_fte_by_day']} whole "
+                 f"full-time hires it would be ~€{k['bc_hire_first_year_whole_hires_eur'] / 1000:,.0f}k. Remember the SLA these "
+                 "options move is response, not resolution.</p>"),
         ("fig", "options", "Optimistic (dark) and conservative (light) rule for each option. Annotations show first-year cost."),
         ("table", "options"),
         ("fig", "email_alert", f"The pickup fix moves the ceiling itself. Based on the {k['email_breaches']} real email "
@@ -363,9 +372,10 @@ def _business(k):
         ("html", f"""<div class="callout"><b>Recommendation:</b> no headcount request this quarter. The 2023 data shows a
 process change, not a capacity shortfall, and hiring would mainly buy response SLA, which is not the SLA that fell.
 Clear and police stale tickets. Find the resolution slow path. Pilot the email alert and self-service. Re-roster toward
-weekend workload once WFM confirms today's roster. Revisit headcount if weekly volume runs more than
-+{k['growth_holds_until_no_deflection'] * 100:.0f}% above 2023 for a month, or if contacts reaching an agent within target
-fall below 90%.</div>"""),
+weekend workload once WFM confirms today's roster. If weekly volume runs more than
++{k['growth_sl_within_1pt_no_deflection'] * 100:.0f}% above 2023 for a month, re-run this capacity model; at about
++{k['growth_holds_until_no_deflection'] * 100:.0f}% (or if fewer than 90% of contacts reach an agent within target) the
+roster no longer meets its staffing goal and the choice is hire or deflect.</div>"""),
     ]
 
 

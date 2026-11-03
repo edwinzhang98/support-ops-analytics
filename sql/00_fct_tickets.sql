@@ -146,11 +146,12 @@ SELECT
     -- raw flags kept for reconciliation
     response_sla_flag_raw,
     resolution_sla_flag_raw,
-    (response_sla_flag_raw = 'Within SLA') IS DISTINCT FROM (
-        CASE WHEN first_response_at IS NULL AND response_due_at <= snapshot_at THEN FALSE
-             WHEN first_response_at IS NULL OR frt_min_raw < 0 THEN NULL
-             ELSE first_response_at <= response_due_at END
-    ) AND frt_min_raw >= 0                                    AS response_flag_mismatch,
+    CASE WHEN frt_min_raw < 0 THEN FALSE                     -- invalid timestamps: not comparable
+         ELSE (response_sla_flag_raw = 'Within SLA') IS DISTINCT FROM (
+              CASE WHEN first_response_at IS NULL AND response_due_at <= snapshot_at THEN FALSE
+                   WHEN first_response_at IS NULL THEN NULL
+                   ELSE first_response_at <= response_due_at END)
+    END                                                       AS response_flag_mismatch,
     (resolution_sla_flag_raw = 'Within SLA') IS DISTINCT FROM (
         CASE WHEN resolved_at IS NULL AND resolution_due_at <= snapshot_at THEN FALSE
              WHEN resolved_at IS NULL THEN NULL
