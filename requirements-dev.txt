@@ -1,0 +1,2 @@
+# Only needed to regenerate the README screenshots (scripts/take_screenshots.py)
+playwright==1.55.0

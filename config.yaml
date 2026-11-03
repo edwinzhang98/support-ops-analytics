@@ -1,0 +1,80 @@
+# ---------------------------------------------------------------------------
+# Pipeline configuration. Every modelling assumption lives here and is
+# documented in docs/assumptions.md. Change a value, re-run `make all`.
+# ---------------------------------------------------------------------------
+
+data:
+  # Raw export (never committed). Override with env var SUPPORT_TICKETS_CSV,
+  # or put SUPPORT_TICKETS_CSV=... in a .env file at the repo root.
+  raw_csv: "~/projects/data-projects/datasets/p6-support-tickets/technical-support/Technical Support Dataset.csv"
+  processed_dir: "data/processed"
+
+reports_dir: "reports"
+random_seed: 42
+
+# Company SLA attainment goal (not in the data; adjustable in the dashboard)
+sla:
+  goal_attainment: 0.90
+  # Tickets still open this many days after creation are "aged" backlog.
+  # 7 days = longer than any resolution observed in the export (max 6.1 days).
+  aged_backlog_days: 7
+
+# Synthetic scale-up (used only for staffing / capacity questions)
+scenario:
+  scale_factor: 20            # synthetic volume = 20 x the export
+  year: 2023
+  # 3-hour circular smoothing of the hourly arrival profile (seed has ~100 tickets/hour-of-day)
+  hourly_smoothing_weights: [0.25, 0.5, 0.25]
+
+staffing:
+  live_channels: ["Chat", "Phone"]   # need an agent within minutes
+  live_target_min: 2                 # response target for chat/phone (from data)
+  async_target_min: 60               # response target for email (from data); also used for follow-ups
+  sl_goal: 0.90                      # share of contacts answered within target
+  max_occupancy: 0.85                # cap on time agents spend handling work
+  shrinkage: 0.30                    # share of scheduled time not available (breaks, meetings, training, absence)
+  # Handle time per agent touch, minutes (NOT in the data -> assumption, sensitivity +/-30%)
+  handle_time_min:
+    chat_first: 12
+    phone_first: 10
+    email_first: 8
+    follow_up: 6
+  handle_time_cv: 0.8                # lognormal coefficient of variation used in simulation
+  min_agents_per_pool: 1             # 24/7 coverage: at least one agent on each pool every hour
+  shift_length_h: 8
+  shift_starts: [0, 4, 8, 12, 16, 20]   # allowed start hours for the proposed roster
+  current_roster_starts: [0, 8, 16]     # assumed current roster: 3 equal shifts, 7 days
+  shifts_per_fte_week: 5
+
+# Business case (assumptions, to be validated with Finance)
+cost:
+  fte_annual_eur: 60000          # fully loaded cost of one support agent FTE
+  hire_one_off_eur: 5000         # recruiting + onboarding per hire
+  automation_one_off_eur: 40000  # self-service content build + portal / routing configuration
+  automation_annual_eur: 25000   # tooling licences + content upkeep
+
+# Deflection assumptions by topic: share of that topic's tickets that would be
+# resolved by self-service or routed away from the agent queue (low / base / high).
+automation:
+  topics:
+    "Pricing and licensing":
+      lever: "Pricing & licensing FAQ + self-service license portal (keys, seats, renewals)"
+      deflection: [0.10, 0.20, 0.30]
+    "Purchasing and invoicing":
+      lever: "Billing portal: invoice download, payment status, PO / address changes"
+      deflection: [0.15, 0.25, 0.35]
+    "Product setup":
+      lever: "Guided setup articles + in-app onboarding checklist"
+      deflection: [0.05, 0.15, 0.25]
+    "Feature request":
+      lever: "Route to product feedback portal with auto-acknowledgement (not support work)"
+      deflection: [0.25, 0.40, 0.60]
+    "Training request":
+      lever: "Training catalogue + booking form"
+      deflection: [0.25, 0.40, 0.60]
+    "Bug report":
+      lever: "None (needs investigation); status page for known issues only"
+      deflection: [0.00, 0.00, 0.05]
+    "Other":
+      lever: "None identified"
+      deflection: [0.00, 0.00, 0.05]
