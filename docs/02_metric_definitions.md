@@ -510,8 +510,8 @@ real team. Hour of week (`how`) runs from Mon 00:00 = 0 to Sun 23:00 = 167.
   roundings (agent-hours per week, from `staff_demand` and `staff_requirement`): whole people in every hour, including
   the 10 hours where the 2-minute live target binds (750 → 837); 8-hour shifts that cannot follow the hourly need
   exactly (→ 912 = 114 shifts); and whole FTE (→ 920 = 115 shifts).
-- **Caveat.** This is the requirement of a 20× planning desk. Write "a 23-FTE desk in the 20× planning scenario",
-  never "the current team has 23 FTE".
+- **Caveat.** This is the requirement of a 20× planning desk. The 23-FTE requirement applies to the 20× planning
+  scenario; the real team's headcount is unknown.
 
 ### 6.10 Queue on-time ("contacts reaching an agent within target")
 - **Definition.** In the simulation, the queue wait of a ticket's first touch is the time from arrival until it first

@@ -69,7 +69,7 @@ What a shortfall looks like in ticket data: tickets that arrive when more work i
 - **Backlog.** Active backlog (open 7 days or less) averaged 15.1 tickets, maximum 26, flat all year. Little's law (arrivals per day × average time a ticket stays active) predicts 15.4. The desk keeps up with arrivals.
 - **Distribution.** The median moved 20.3 → 23.4 h. The change is in the tail. A shortfall slows everyone.
 
-Caveat, to be stated with every use of this finding: the export records ticket events, not agent time. A capacity change outside the ticket data — time diverted to projects or training, a tooling change that slowed every touch, higher absence — would not be visible here. The data shows a process change, not a capacity shortfall; it does not prove that capacity was unchanged. The roster and handle-time data in section 4 would settle this.
+Caveat: the export records ticket events, not agent time. A capacity change outside the ticket data — time diverted to projects or training, a tooling change that slowed every touch, higher absence — would not be visible here. The data shows a process change, not a capacity shortfall; it does not prove that capacity was unchanged. The roster and handle-time data in section 4 would settle this.
 
 ### H4 — A specific segment, agent or time slot: not supported [REAL]
 
