@@ -114,11 +114,11 @@ tbl = prof[["topic", "tickets", "share", "lever", "interactions_mean", "tier2_sh
     bt[["topic", "deflection_rate", "tickets_deflected_2023", "agent_hours_saved_week"]], on="topic")
 for c in ["share", "tier2_share", "deflection_rate"]:
     tbl[c] = 100 * tbl[c]
-st.dataframe(tbl, hide_index=True, width="stretch", column_config={
+st.dataframe(tbl, hide_index=True, width="stretch", row_height=56, column_config={
     "topic": st.column_config.TextColumn("Topic"),
     "tickets": st.column_config.NumberColumn("Tickets", format="%,d", help="Tickets in the 2023 export"),
     "share": st.column_config.NumberColumn("Share", format="%.1f%%", help="Share of 2023 tickets"),
-    "lever": st.column_config.TextColumn("Lever", width="medium", help="Self-service or routing lever (assumption)"),
+    "lever": st.column_config.TextColumn("Lever", width="large", help="Self-service or routing lever (assumption)"),
     "interactions_mean": st.column_config.NumberColumn("Interactions", format="%.1f",
                                                        help="Mean agent interactions per ticket"),
     "tier2_share": st.column_config.NumberColumn("Tier 2", format="%.0f%%", help="Share handled by 2nd line"),

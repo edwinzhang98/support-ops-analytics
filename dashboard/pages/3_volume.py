@@ -29,8 +29,9 @@ def weekday_rates() -> dict:
 
 ui.takeaway(
     f"Volume did not grow: H2 was {abs(100 * k['volume_change_h2_vs_h1']):.1f}% "
-    f"{'below' if k['volume_change_h2_vs_h1'] < 0 else 'above'} H1 and every month sits within chance variation of "
-    f"the {k['real_tickets_per_day']:.1f}-a-day average. Weekdays get about {weekday_ratio:.1f}x the "
+    f"{'below' if k['volume_change_h2_vs_h1'] < 0 else 'above'} H1, and month-to-month variation around the "
+    f"{k['real_tickets_per_day']:.1f}-a-day average is no larger than chance (p = "
+    f"{k['volume_month_seasonality_p']:.2f}). Weekdays get about {weekday_ratio:.1f}x the "
     "weekend volume, arrivals are flat across the hours of the day, and demand is spread across topics (the top "
     f"{k['pareto_top20pct_topics_n']} of {n_topics} topics are {P(k['pareto_top20pct_topics_share'], 0)} of "
     "tickets).")
@@ -62,8 +63,8 @@ fct_counts = ui.load("fct_tickets")[["channel", "topic"]]
 channel_opts = fct_counts["channel"].value_counts().index.tolist()
 topic_opts = fct_counts["topic"].value_counts().index.tolist()
 f1, f2 = st.columns([1, 2])
-channels = f1.multiselect("Channel", channel_opts, default=channel_opts, key="p3_channels")
-topics = f2.multiselect("Topic", topic_opts, default=topic_opts, key="p3_topics")
+channels = f1.pills("Channel", channel_opts, selection_mode="multi", default=channel_opts, key="p3_channels")
+topics = f2.pills("Topic", topic_opts, selection_mode="multi", default=topic_opts, key="p3_topics")
 if not channels or not topics:
     st.info("Select at least one channel and one topic to draw the heatmap.")
 else:
@@ -89,9 +90,10 @@ st.subheader("Did the channel mix change?")
 ui.show(C.fig_channel_mix(ui.load("kpi_channel_mix")), key="p3_channel_mix")
 
 ui.how_to_read(f"""
-- **Monthly bars** show tickets per calendar day, so short and long months compare fairly. The whiskers are a 95%
-  Poisson interval: the range a month would land in by chance alone if the true rate never changed. Every month
-  is consistent with the yearly average, so there was no growth.
+- **Monthly bars** show tickets per calendar day, so short and long months compare fairly. The whiskers are each
+  month's 95% Poisson confidence interval: the range its true daily rate plausibly lies in. Most intervals include
+  the yearly average, and a test across all twelve months finds no more variation than chance
+  (p = {k['volume_month_seasonality_p']:.2f}), so there was no growth and no seasonality to plan for.
 - **Heatmap.** Rows are weekdays, columns the hour the ticket was created; darker means more tickets. Each cell is
   "tickets per week" in that slot: the 2023 count for, say, Monday 09:00 divided by the number of Mondays in the
   data. A cell of 0.5 means one ticket every other week in that hour. Use the filters to check one channel or topic

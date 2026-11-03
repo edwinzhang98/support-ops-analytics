@@ -12,14 +12,20 @@ from support_ops.report_text import recommendations
 
 ui.page_header("Headcount Business Case",
                "Hire, re-roster or automate: what does each option cost and what service level does it buy?",
-               "SYNTHETIC", "ASSUMPTION")
+               "SYNTHETIC", "ASSUMPTION", "REAL")
 
 k = ui.key_numbers()
 scale = k["synth_scale_factor"]
 cfg = ui.config()
 cost = cfg["cost"]
 goal = cfg["sla"]["goal_attainment"]
-trigger = f"+{k['growth_holds_until_no_deflection']:.0%}"
+early = f"+{k['growth_sl_within_1pt_no_deflection']:.0%}"          # response SLA starts to slip: re-run the model
+trigger = f"+{k['growth_holds_until_no_deflection']:.0%}"           # hard trigger: hire or deflect
+trigger_text = (f"weekly volume more than {early} above 2023 (about {k['volume_weekly_trigger_early']} tickets a week "
+                f"against {k['volume_weekly_mean']:.0f}) for four weeks: re-run this capacity model. More than {trigger} "
+                f"(about {k['volume_weekly_trigger_hard']} a week), fewer than {cfg['staffing']['sl_goal']:.0%} of "
+                f"contacts reaching an agent within target, or utilisation above {cfg['staffing']['max_occupancy']:.0%}: "
+                "the choice is hire or deflect")
 
 
 @st.cache_data(show_spinner=False, max_entries=512)
@@ -41,7 +47,8 @@ ui.takeaway(
     "planning scenario, re-rostering the same people lifts simulated response SLA from "
     f"{ui.pct(k['bc_status_quo_sl'])} "
     f"to <b>{ui.pct(k['bc_reroster_sl'])}</b> at no cost; hiring {k['staff_hire_extra_fte_equiv_by_day']:.1f} FTE of "
-    f"weekend shifts reaches {ui.pct(k['bc_hire_sl'])} for ~€{k['bc_hire_first_year_eur'] / 1000:,.0f}k in year one, "
+    f"weekend shifts reaches about the same ({ui.pct(k['bc_hire_sl'])}) for ~€{k['bc_hire_first_year_eur'] / 1000:,.0f}k "
+    "in year one, "
     f"only +{k['rep_hire_minus_reroster_pp_min']:.1f} to +{k['rep_hire_minus_reroster_pp_max']:.1f} points more "
     f"(optimistic rule) or +{k['rep_hire_minus_reroster_pp_sum_min']:.1f} to "
     f"+{k['rep_hire_minus_reroster_pp_sum_max']:.1f} (conservative).")
@@ -50,10 +57,7 @@ recs = recommendations(k)
 with st.container(border=True):
     st.markdown("**Recommendation: no headcount request this quarter.** The 2023 data shows a process change, not a "
                 "capacity shortfall. Instead:\n\n" + "\n".join(r[0] for r in recs) +
-                f"\n\n**Trigger to revisit headcount:** weekly volume more than {trigger} above 2023 for a month, "
-                f"fewer than {cfg['staffing']['sl_goal']:.0%} of contacts reaching an agent within target, or agent "
-                f"utilisation "
-                f"above {cfg['staffing']['max_occupancy']:.0%}.")
+                f"\n\n**Trigger to revisit headcount:** {trigger_text}.")
     with st.expander("Owner, expected impact, how we measure, risk"):
         for title, owner, impact, measure, risk in recs:
             st.markdown(f"**{title}**  \nOwner: {owner}  \nExpected impact: {impact}  \nHow we measure: {measure}  \n"
@@ -88,9 +92,9 @@ tbl = pd.DataFrame({
     "year1": year1.astype("int64"),
     "sl_opt": 100 * opts["response_sl"], "sl_cons": 100 * opts["response_sl_sum"],
     "per_point": [f"€{c_ / g:,.0f}" if g > 1e-9 else "n/a" for c_, g in zip(year1, gain)]})
-st.dataframe(tbl, hide_index=True, width="stretch", column_config={
+st.dataframe(tbl, hide_index=True, width="stretch", row_height=56, column_config={
     "option": st.column_config.TextColumn("Option"),
-    "what_changes": st.column_config.TextColumn("What changes", width=270),
+    "what_changes": st.column_config.TextColumn("What changes", width=330),
     "fte": st.column_config.NumberColumn("FTE", format="%.1f"),
     "one_off": st.column_config.NumberColumn("One-off", format="€%,d", help="One-off cost (€)"),
     "recurring": st.column_config.NumberColumn("Per year", format="€%,d",
@@ -123,7 +127,7 @@ sl = alert_sl(k["response_sla_2023"], k["email_breaches"], k["response_evaluable
 m = st.columns(3)
 m[0].metric("Response SLA today (%, real 2023 tickets)", ui.pct(k["response_sla_2023"]))
 m[1].metric("Response SLA with the alert (%)", ui.pct(sl),
-            delta=ui.pp(100 * (sl - k["response_sla_2023"])) if catch else None)
+            delta=ui.pp(round(100 * sl, 1) - round(100 * k["response_sla_2023"], 1)) if catch else None)
 m[2].metric("Email breaches avoided (tickets, 2023)",
             f"{k['email_breaches'] * catch / 100:.0f} of {k['email_breaches']}")
 ui.show(C.fig_email_alert(ui.load("rca_email_alert"), k["response_sla_2023"], goal), key="p8_email_alert")
@@ -138,10 +142,12 @@ st.subheader("When to revisit headcount")
 ui.badges("SYNTHETIC")
 ui.show(C.fig_growth(ui.load("staff_growth"), cfg["staffing"]["sl_goal"], cfg["staffing"]["max_occupancy"]),
         key="p8_growth")
-st.caption(f"SYNTHETIC. The re-rostered team meets the staffing goal up to {trigger} volume; with base-case "
-           f"deflection it still meets it at +{k['growth_max_tested']:.0%}, the top of the tested range. Headcount "
-           f"trigger: weekly volume more than {trigger} above 2023 for a month, or fewer than "
-           f"{cfg['staffing']['sl_goal']:.0%} of contacts reaching an agent within target.")
+st.caption(f"SYNTHETIC. With the workload-matched roster, simulated response SLA stays within a point of today's level "
+           f"up to {early} volume and slips after that ({ui.pct(k['growth_sl_at_plus10_no_deflection'])} at +10%, "
+           f"{ui.pct(k['growth_sl_at_plus25_no_deflection'])} at +25%, optimistic rule). The roster still meets its "
+           f"staffing goal at {trigger} and fails it at +{k['growth_staffing_fails_at_no_deflection']:.0%}; with base-case "
+           f"deflection it still meets it at +{k['growth_max_tested']:.0%}, the top of the tested range. Trigger: "
+           f"{trigger_text}.")
 
 # ---------------------------------------------------------------------------------------------------------
 st.subheader("What would change this recommendation")
@@ -150,13 +156,12 @@ with st.container(border=True):
     st.markdown(f"""
 | If the data shows... | ...the recommendation leans to | What the 2023 data shows |
 |---|---|---|
-| Volume grows materially (> ~10%) and breaches rise with load | **Hire**: the capacity gap is real and growing | Volume H2 vs H1 {k['volume_change_h2_vs_h1']:+.1%}; breach rates flat across load quintiles (p = {k['rca_load_trend_p_min']:.2f}-{k['rca_load_trend_p_max']:.2f}) [REAL] |
+| Volume runs more than {trigger} above 2023 for a month and breaches rise with load | **Hire**: the capacity gap is real and growing | Volume H2 vs H1 {k['volume_change_h2_vs_h1']:+.1%}; breach rates flat across load quintiles (p = {k['rca_load_trend_p_min']:.2f}-{k['rca_load_trend_p_max']:.2f}) [REAL] |
 | Volume flat, but demand and roster misaligned by hour or day | **Re-roster** before hiring | Not known: today's roster is not in the data. Weekday-weighted is an assumption for WFM to confirm |
 | Volume flat, breaches spread across all segments, not load-driven | **Process fixes**: find what changed | This is the 2023 pattern: resolution SLA fell in every segment and no combination survives the false-discovery check [REAL] |
 | A few high-volume, low-complexity topics dominate | **Automation / self-service** | Partly: {k['pareto_top20pct_topics_n']} of {n_topics} topics hold {ui.pct(k['pareto_top20pct_topics_share'], 0)} of tickets; base case deflects {ui.pct(k['auto_deflected_share_base'])} (assumed rates) |
 
-Headcount comes back on the table if volume runs more than {trigger} above 2023 for a month, if fewer than
-{cfg['staffing']['sl_goal']:.0%} of contacts reach an agent within target, or if the status history shows the slowdown
+Headcount comes back on the table on the trigger above ({trigger_text}), or if the status history shows the slowdown
 comes from capacity diverted outside the ticket data (time on other work, tooling), which the export cannot exclude.
 """)
 
@@ -175,8 +180,9 @@ ui.how_to_read(f"""
   today ({ui.pct(k['staff_process_ceiling'])} in the scenario). Rosters and headcount only shorten the queue, so
   none of them can beat it. The email alert changes the pickup itself, so it raises the ceiling. That is why it is
   shown separately, on the real 2023 tickets, and gets no credit until a pilot measures the catch rate.
-- **Growth chart.** How much extra volume the re-rostered team absorbs before fewer than
+- **Growth chart.** How much extra volume the workload-matched roster absorbs before fewer than
   {cfg['staffing']['sl_goal']:.0%} of contacts reach an agent within target or utilisation passes
-  {cfg['staffing']['max_occupancy']:.0%}. That point is the headcount trigger.
+  {cfg['staffing']['max_occupancy']:.0%} (the hard trigger, {trigger}). Response SLA already starts slipping after
+  {early}, which is why the early warning sits there.
 - These options move response SLA. The SLA that fell, resolution, needs the stale-ticket sweep and the slow-path fix.
 """)

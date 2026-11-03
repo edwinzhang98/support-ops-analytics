@@ -105,7 +105,7 @@ def deflected_items(tickets: pd.DataFrame, items: pd.DataFrame, cfg: dict, level
 
 def growth_headroom(items: pd.DataFrame, tickets: pd.DataFrame, cfg: dict, fte_available: int,
                     factors=np.round(np.arange(1.0, 1.61, 0.05), 2)) -> pd.DataFrame:
-    """FTE needed (demand-shaped roster) as volume grows, to find when hiring becomes necessary."""
+    """FTE needed (workload-matched roster) as volume grows, to find when hiring becomes necessary."""
     st = cfg["staffing"]
     demand = demand_by_how(items, tickets)
     rows = []

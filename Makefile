@@ -12,11 +12,11 @@ data:
 	$(PY) run.py --skip-report
 
 ## report: reports/report.html + reports/figures/*.png
-report:
+report: data
 	$(PY) -c "from support_ops import report; report.build()"
 
 ## notebooks: execute every notebook top to bottom, save outputs, export HTML to reports/
-notebooks:
+notebooks: report
 	$(PY) -m jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=600 $(NOTEBOOKS)
 	$(PY) -m jupyter nbconvert --to html --output-dir reports $(NOTEBOOKS)
 

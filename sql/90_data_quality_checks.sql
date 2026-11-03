@@ -6,7 +6,10 @@
 -- Output: one row per check: check_id, area, check_name, observed, expected,
 --         status (PASS / FLAG / INFO), action_taken
 -- Results are written up in docs/03_data_quality_checks.md
--- Run: python -m support_ops.sql sql/90_data_quality_checks.sql
+-- Run: python -m support_ops.sql sql/90_data_quality_checks.sql   (paths filled from config.yaml)
+-- Run standalone (from repo root, DuckDB CLI, after sql/00 has written the parquet):
+--   duckdb -c "SET VARIABLE raw_csv_path='/path/Technical Support Dataset.csv'" \
+--          -c ".read sql/90_data_quality_checks.sql"
 -- =============================================================================
 WITH raw AS (
     SELECT * FROM read_csv(getvariable('raw_csv_path'), header = true)

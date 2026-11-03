@@ -50,13 +50,16 @@ view = dq[dq["status"].isin(picked)][["area", "check_name", "observed", "expecte
 if view.empty:
     st.info("Select at least one status to list the checks.")
 else:
-    st.dataframe(view, hide_index=True, height=min(36 + 35 * len(view), 600), placeholder="–", column_config={
+    order = {"FLAG": 0, "INFO": 1, "PASS": 2}
+    view = view.sort_values("status", key=lambda s: s.map(order), kind="stable")     # flagged checks first
+    st.dataframe(view, hide_index=True, row_height=66, height=min(38 + 66 * len(view), 900), placeholder="–",
+                 column_config={
         "area": st.column_config.TextColumn("Area", width=105),
-        "check_name": st.column_config.TextColumn("Check", width=330),
+        "check_name": st.column_config.TextColumn("Check", width=300),
         "observed": st.column_config.NumberColumn("Observed", format="localized", width=75),
         "expected": st.column_config.NumberColumn("Expected", format="localized", width=75),
         "status": st.column_config.TextColumn("Status", width=60),
-        "action_taken": st.column_config.TextColumn("Action taken", width=320),
+        "action_taken": st.column_config.TextColumn("Action taken", width=420),
     })
 st.caption(f"Showing {len(view)} of {len(dq)} checks. PASS = the rule holds; FLAG = the rule is broken and the fix "
            "is in 'Action taken'; INFO = context, no pass/fail rule; – = no expected value. Click a cell to read long "
@@ -140,7 +143,8 @@ outcomes = pd.DataFrame([
     ("Resolution SLA attainment", 100 * k["resolution_sla_2023"], 100 * k["synth_resolution_sla"],
      "Copied from real tickets of the same month, so the 2023 decline carries over."),
     ("Response SLA, pickup delay only (no queue)", 100 * k["response_sla_2023"], 100 * k["staff_process_ceiling"],
-     "At real volume no queue forms, so real response times measure pickup. Synthetic: the process ceiling."),
+     "At real volume no queue forms, so real response times measure pickup. Synthetic: the process ceiling. "
+     "The 0.6-point gap is sampling noise (about ±1.4 points on 2,328 tickets); other synthetic years give 87.1-87.3%."),
     ("Response SLA incl. simulated queue (today's assumed roster)", None, 100 * k["staff_sl_today_by_day"],
      "Adds the simulated wait for a free agent (optimistic rule), so it sits below the real figure."),
 ], columns=["metric", "real", "synthetic", "note"])

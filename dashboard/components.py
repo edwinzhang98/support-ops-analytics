@@ -35,7 +35,23 @@ _CSS = """
 """
 
 
+def _equal_height_metrics() -> None:
+    """KPI tiles in one row get the same height whether or not they show a delta (st.metric height="stretch")."""
+    import streamlit.delta_generator as dg
+    if getattr(dg.DeltaGenerator.metric, "_equal_height", False):
+        return
+    original = dg.DeltaGenerator.metric
+
+    def metric(self, *args, **kwargs):
+        kwargs.setdefault("height", "stretch")
+        return original(self, *args, **kwargs)
+
+    metric._equal_height = True
+    dg.DeltaGenerator.metric = metric
+
+
 def setup_page() -> None:
+    _equal_height_metrics()
     st.markdown(_CSS, unsafe_allow_html=True)
     if not processed_path("fct_tickets.parquet").exists():
         st.error("Processed data not found. Run `python run.py` (or `make all`) from the repo root first.")

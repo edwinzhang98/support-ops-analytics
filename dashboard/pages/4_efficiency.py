@@ -39,13 +39,13 @@ c1.metric("Resolution SLA, Q4 (%)", P(k["resolution_sla_q4"]),
                f"{P(k['resolution_sla_q4'])}; January {P(k['resolution_sla_jan'])}, December "
                f"{P(k['resolution_sla_dec'])}.")
 c2.metric("Response SLA, H2 (%)", P(k["response_sla_h2"]),
-          ui.pp(100 * (k["response_sla_h2"] - k["response_sla_h1"])), delta_color="normal",
+          ui.pp(round(100 * k["response_sla_h2"], 1) - round(100 * k["response_sla_h1"], 1)), delta_color="normal",
           delta_description=f"vs {P(k['response_sla_h1'])} in H1",
           help=f"Share of tickets with a first reply within target (email {k['response_target_min_email']} min, "
                f"chat/phone {k['response_target_min_chat_phone']} min). H1 {P(k['response_sla_h1'])} → H2 "
                f"{P(k['response_sla_h2'])}; 2023 overall {P(k['response_sla_2023'])}.")
 c3.metric("Resolved late, H2 (% of tickets)", P(k["rca_late_share_h2"]),
-          ui.pp(100 * (k["rca_late_share_h2"] - k["rca_late_share_h1"])), delta_color="inverse",
+          ui.pp(round(100 * k["rca_late_share_h2"], 1) - round(100 * k["rca_late_share_h1"], 1)), delta_color="inverse",
           delta_description=f"vs {P(k['rca_late_share_h1'])} in H1",
           help="Tickets that were resolved, but after the target, as a share of ALL tickets created: "
                f"{P(k['rca_late_share_h1'])} in H1 → {P(k['rca_late_share_h2'])} in H2. Never-resolved tickets fell "
@@ -148,12 +148,14 @@ st.caption("Agent = the ticket's current owner, not everyone who worked on it: u
            "agents: the slowdown is team-wide.")
 
 # ---------------------------------------------------------------------------------------------
-st.subheader("How late are first-response breaches?")
+st.subheader("Response breaches: slow pickup or missed tickets?")
 ui.show(C.fig_breach_lateness(fct), key="p4_breach_lateness")
 st.caption(f"Median minutes past target: chat {k['late_chat_breach_median_min_late']:.1f}, phone "
            f"{k['late_phone_breach_median_min_late']:.1f}, email {k['late_email_breach_median_min_late']:.0f}. Only "
            f"{P(k['email_breach_near_miss_share'], 0)} of email breaches are near-misses (60 minutes late or less): a "
-           "late email has usually been missed for hours, not queued.")
+           "late email has usually been missed for hours, not queued. The chart shows breaches that were eventually "
+           f"answered; {k['email_breach_never_answered']} of the {k['email_breaches']} email breaches never got a first "
+           "reply.")
 
 ui.how_to_read(f"""
 - **95% interval (Wilson).** Every rate here is measured on a limited number of tickets, so it carries sampling

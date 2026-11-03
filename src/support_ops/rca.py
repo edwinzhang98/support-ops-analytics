@@ -220,14 +220,22 @@ def recovery_scenario(fct: pd.DataFrame) -> dict:
             "on_time_h2_if_late_back_to_h1": float(on_h2 + (late_h2 - late_h1))}
 
 
-def monthly_seasonality_p(fct: pd.DataFrame) -> float:
-    """Chi-square goodness of fit: monthly ticket counts vs counts expected from each month's
-    weekday mix (weekday and weekend rates from the whole year, days in the export window only)."""
+def monthly_seasonality(fct: pd.DataFrame) -> dict:
+    """Chi-square goodness of fit: monthly ticket counts vs counts expected from each month's weekday mix
+    (weekday and weekend daily rates from the whole year; days in the export window only).
+    Returns the p-value and a per-month table (observed, expected, z)."""
     days = pd.DataFrame({"date": pd.date_range(fct["created_date"].min(), fct["created_date"].max())})
     counts = fct.groupby("created_date").size()
     days["n"] = days["date"].map(counts).fillna(0)
     days["weekend"] = days["date"].dt.day_of_week >= 5
-    rate = days.groupby("weekend")["n"].mean()
-    days["exp"] = days["weekend"].map(rate)
+    days["exp"] = days["weekend"].map(days.groupby("weekend")["n"].mean())
     by_m = days.groupby(days["date"].dt.month)[["n", "exp"]].sum()
-    return float(stats.chisquare(by_m["n"], by_m["exp"] * by_m["n"].sum() / by_m["exp"].sum()).pvalue)
+    by_m["exp"] = by_m["exp"] * by_m["n"].sum() / by_m["exp"].sum()
+    by_m["z"] = (by_m["n"] - by_m["exp"]) / np.sqrt(by_m["exp"])
+    by_m.index = [pd.Timestamp(2023, m, 1).strftime("%b") for m in by_m.index]
+    table = by_m.rename(columns={"n": "observed", "exp": "expected"})
+    return {"p": float(stats.chisquare(table["observed"], table["expected"]).pvalue), "table": table}
+
+
+def monthly_seasonality_p(fct: pd.DataFrame) -> float:
+    return monthly_seasonality(fct)["p"]

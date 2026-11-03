@@ -8,7 +8,7 @@ Steps
                                   ceil(total workload / max occupancy),
                                   1 agent minimum for 24/7 coverage )
                        scheduled = ceil(N / (1 - shrinkage))   (people are whole: rounded once, here)
- 3. rosters            demand-shaped roster (integer program) vs three hypotheses for
+ 3. rosters            workload-matched roster (integer program) vs three hypotheses for
                        today's roster with the SAME number of weekly shifts
  4. simulate           replay the synthetic year under each roster (support_ops.simulation)
  5. sensitivity        how the answer moves with each assumption
@@ -36,7 +36,7 @@ T0 = pd.Timestamp("2023-01-01")
 N_HOURS = (365 + 7) * 24          # one synthetic year + a week for follow-ups to finish
 
 ROSTER_LABELS = {
-    "proposed": "Proposed: demand-shaped roster (optimised)",
+    "proposed": "Proposed: workload-matched roster (optimised)",
     "by_day": "Today (assumed): weekday-weighted, 3 equal shifts",
     "flat": "Today (alt.): flat 24/7",
     "business_hours": "Today (alt.): day-weighted",
@@ -128,7 +128,7 @@ def continuous_fte(demand: pd.DataFrame, st: dict, shift_h: int = 8) -> float:
 
 
 def min_fte_for_requirement(req: pd.DataFrame, starts: list[int], shifts_per_fte: int = 5) -> tuple[int, int]:
-    """(weekly shifts, FTE) of the cheapest demand-shaped roster meeting the requirement."""
+    """(weekly shifts, FTE) of the cheapest workload-matched roster meeting the requirement."""
     sh = optimize_min_shifts(req["scheduled_required"].to_numpy(), starts)
     n = int(sh["agents"].sum())
     return n, fte_from_shifts(n, shifts_per_fte)
@@ -197,7 +197,7 @@ def capacity_plan(tickets: pd.DataFrame, cfg: dict, follow_up_timing: str = "any
     req = requirement(demand, st)
     starts = st["shift_starts"]
 
-    # demand-shaped roster: cheapest cover -> FTE -> best spread of that many shifts
+    # workload-matched roster: cheapest cover -> FTE -> best spread of that many shifts
     min_shifts, fte = min_fte_for_requirement(req, starts, st["shifts_per_fte_week"])
     budget = fte * st["shifts_per_fte_week"]
     proposed = optimize_fixed_budget(req["scheduled_required"].to_numpy(), budget, starts, fte,
@@ -259,7 +259,7 @@ def capacity_plan(tickets: pd.DataFrame, cfg: dict, follow_up_timing: str = "any
 # 5. Sensitivity
 # ---------------------------------------------------------------------------
 def sensitivity(tickets: pd.DataFrame, cfg: dict, base_items: pd.DataFrame | None = None) -> pd.DataFrame:
-    """One-at-a-time sensitivity of the FTE requirement (demand-shaped roster) and of the
+    """One-at-a-time sensitivity of the FTE requirement (workload-matched roster) and of the
     extra FTE needed if today's weekday-weighted pattern is kept instead of re-rostering."""
     st = cfg["staffing"]
     starts = st["shift_starts"]

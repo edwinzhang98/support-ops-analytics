@@ -6,7 +6,7 @@ from support_ops import charts as C
 from support_ops import interactive
 
 # Staffing Model (SYNTHETIC 20x scale-up + ASSUMPTIONS). What-if: the hourly requirement (Erlang C + occupancy cap +
-# shrinkage) and the cheapest demand-shaped roster are recomputed for the chosen assumptions and compared with one
+# shrinkage) and the cheapest workload-matched roster are recomputed for the chosen assumptions and compared with one
 # hypothesis for today's roster. Below: the static base-case simulation, sensitivity, growth and an Erlang C explainer.
 
 ui.page_header("Staffing Model",
@@ -90,7 +90,7 @@ def delta(now: float, ref: float, unit: str, fmt: str = "+.0f") -> str | None:
     return None if round(now - ref, 6) == 0 else f"{now - ref:{fmt}} {unit} vs base case"
 
 
-m = st.columns(4)
+m = st.columns(5)
 m[0].metric("FTE needed, proposed roster", f"{res['fte_needed']}",
             delta=delta(res["fte_needed"], base["fte_needed"], "FTE"), delta_color="inverse",
             help=f"Fewest 8-hour shifts that cover every hour: {res['weekly_shifts']} a week; divided by "
@@ -103,6 +103,13 @@ m[2].metric("Hours short, today (of 168 h)", f"{res['hours_today_short']}",
 m[3].metric("Agent-hours short per week (h)", f"{res['agent_hours_short_today']:.0f}",
             delta=delta(res["agent_hours_short_today"], base["agent_hours_short_today"], "h"), delta_color="inverse",
             help="Sum over the week of (required - scheduled) in the hours that are short.")
+live_h = int((res["requirement"]["binding"] == "live response").sum())
+base_live_h = int((base["requirement"]["binding"] == "live response").sum())
+m[4].metric("Hours set by the live target (of 168 h)", f"{live_h}",
+            delta=delta(live_h, base_live_h, "h"), delta_color="off",
+            help="Hours where the chat/phone answer target, not total workload, decides how many people are needed.")
+st.caption("Total workload, not the live answer target, sets the requirement in most hours, so the SLA-goal and "
+           "answer-target sliders barely move headcount; handle time, shrinkage, occupancy and volume do.")
 
 req = res["requirement"].rename(columns={"scheduled_today": f"scheduled_{today}"})
 ui.show(C.fig_requirement_vs_roster(req, rosters=(today, "proposed")), key="p6_requirement_vs_roster")
@@ -176,10 +183,14 @@ st.caption(f"SYNTHETIC. FTE needed ranges from {k['sens_fte_aht_low']} (handle t
 
 st.subheader("Growth headroom")
 ui.show(C.fig_growth(ui.load("staff_growth"), stf["sl_goal"], stf["max_occupancy"]), key="p6_growth")
-st.caption(f"SYNTHETIC. The workload-matched roster meets the staffing goal (at least {stf['sl_goal']:.0%} of contacts "
-           f"reach an agent within target, utilisation at most {stf['max_occupancy']:.0%}) up to "
-           f"+{k['growth_holds_until_no_deflection']:.0%} volume; with base-case deflection it still meets it at "
-           f"+{k['growth_max_tested']:.0%}, the end of the tested range.")
+st.caption(f"SYNTHETIC. Simulated response SLA stays within a point of today's level up to "
+           f"+{k['growth_sl_within_1pt_no_deflection']:.0%} volume and slips after that "
+           f"({ui.pct(k['growth_sl_at_plus10_no_deflection'])} at +10%, {ui.pct(k['growth_sl_at_plus25_no_deflection'])} "
+           f"at +25%, optimistic rule): that is the early warning to re-run this model. The roster still meets the "
+           f"staffing goal (at least {stf['sl_goal']:.0%} of contacts reach an agent within target, utilisation at most "
+           f"{stf['max_occupancy']:.0%}) at +{k['growth_holds_until_no_deflection']:.0%} and fails it at "
+           f"+{k['growth_staffing_fails_at_no_deflection']:.0%}. With base-case deflection it still meets the goal at "
+           f"+{k['growth_max_tested']:.0%}, the top of the tested range.")
 
 # ---------------------------------------------------------------------------------------------------------
 with st.expander("How Erlang C works — try it"):
@@ -206,7 +217,7 @@ ui.how_to_read(f"""
   {k['staff_hours_binding_workload']} of 168 hours, so the SLA-goal slider barely moves the answer.
 - **Shrinkage** is paid time when agents are unavailable (breaks, meetings, training, absence). At
   {stf['shrinkage']:.0%}, ten people on shift give {10 * (1 - stf['shrinkage']):.0f} productive agents.
-- **Demand-shaped (proposed) roster.** An integer programme picks how many people start a {stf['shift_length_h']}-hour
+- **Workload-matched (proposed) roster.** An integer programme picks how many people start a {stf['shift_length_h']}-hour
   shift at each allowed start time on each day, using as few shifts as possible while covering every hour.
   FTE = weekly shifts / {stf['shifts_per_fte_week']}.
 - **Three versions of today's roster.** The real roster is not in the data, so we test three plausible ones with the

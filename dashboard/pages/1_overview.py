@@ -17,9 +17,7 @@ k = ui.key_numbers()
 P = ui.pct
 goal = k["sla_goal"]
 scale = k["synth_scale_factor"]
-# handle-time sensitivity range behind sens_fte_aht_low/high (rows "x0.7" / "x1.3" of the sensitivity table)
-_sens = ui.load("staff_sensitivity")
-aht_pct = round(100 * abs(1 - float(_sens.loc[_sens["parameter"] == "Handle time per touch", "value"].iloc[0][1:])))
+aht_pct = k.get("sens_aht_factor_pct", 30)   # handle-time sensitivity behind sens_fte_aht_low/high
 
 
 def tag(kind: str) -> str:
@@ -66,20 +64,23 @@ c4.metric("Never resolved (tickets)", f"{k['stale_never_resolved']:,}",
 # ---------------------------------------------------------------------------------------------
 ui.badges("SYNTHETIC")
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Demand-shaped roster (FTE)", f"{k['staff_fte_current']}",
-          help=f"FTE needed with a demand-shaped roster. A desk at {scale}x the export's volume needs "
-               f"{k['staff_weekly_shifts']} eight-hour shifts a week with whole people in every hour. Pure workload "
+c1.metric("Workload-matched roster (FTE)", f"{k['staff_fte_current']}",
+          help=f"FTE needed with a workload-matched roster. At {scale}x the export's volume the cheapest cover is "
+               f"{k['staff_min_shifts']} eight-hour shifts a week with whole people in every hour, i.e. "
+               f"{k['staff_fte_current']} FTE (a {k['staff_weekly_shifts']}-shift budget). Pure workload "
                f"maths without rounding gives {k['staff_fte_continuous']:.1f} FTE; handle time {aht_pct}% lower or "
                f"higher gives {k['sens_fte_aht_low']} to {k['sens_fte_aht_high']}. A planning scenario, not a count of "
                "today's team.")
-c2.metric("Response SLA, proposed (%)", P(k["staff_sl_proposed"]), ui.pp(k["staff_gain_pp_vs_by_day"]),
+c2.metric("Response SLA, proposed (%, optimistic rule)", P(k["staff_sl_proposed"]),
+          ui.pp(round(100 * k["staff_sl_proposed"], 1) - round(100 * k["staff_sl_today_by_day"], 1)),
           delta_color="normal", delta_description=f"vs {P(k['staff_sl_today_by_day'])} today",
-          help="Simulated response SLA, today's assumed weekday-weighted roster → proposed demand-shaped roster, "
+          help="Simulated response SLA, today's assumed weekday-weighted roster → proposed workload-matched roster, "
                f"same {k['staff_fte_current']} FTE: {P(k['staff_sl_today_by_day'])} → {P(k['staff_sl_proposed'])} "
                "under the optimistic rule (queue wait and pickup delay overlap), "
                f"{P(k['staff_sl_sum_today_by_day'])} → {P(k['staff_sl_sum_proposed'])} under the conservative rule "
                f"(they add up). Over {k['rep_n']} simulated years the gain is +{k['rep_gain_pp_vs_by_day_min']:.1f} "
-               f"to +{k['rep_gain_pp_vs_by_day_max']:.1f} points. Holds only if today's roster really is "
+               f"to +{k['rep_gain_pp_vs_by_day_max']:.1f} points (optimistic) or +{k['rep_gain_pp_vs_by_day_sum_min']:.1f} "
+               f"to +{k['rep_gain_pp_vs_by_day_sum_max']:.1f} (conservative). Holds only if today's roster really is "
                "weekday-weighted and weekend follow-ups are done when they arise.")
 c3.metric("Hire alternative (FTE)", f"+{k['staff_hire_extra_fte_equiv_by_day']:.1f}",
           f"€{k['bc_hire_first_year_eur'] / 1000:,.0f}k in year 1", delta_color="off", delta_arrow="off",
@@ -95,6 +96,13 @@ c4.metric("Process ceiling (%)", P(k["staff_process_ceiling"]),
 st.caption(f"Planning scenario: a desk at {scale}x the export's volume, same headcount in every roster except "
            "'Hire'. Today's real roster and headcount are not in the data; the baseline is an assumed "
            "weekday-weighted roster.")
+
+# ---------------------------------------------------------------------------------------------
+# The two headline charts
+# ---------------------------------------------------------------------------------------------
+st.subheader("The two charts behind the headline")
+ui.show(C.fig_sla_trend(ui.load("kpi_monthly"), goal), key="p1_sla_trend")
+ui.show(C.fig_roster_sl(ui.load("staff_sim_summary"), goal), key="p1_roster_sl")
 
 # ---------------------------------------------------------------------------------------------
 # Findings and recommendation (mirror the report's executive summary)
@@ -123,7 +131,6 @@ st.markdown(
     f"resolved; they are {P(k['stale_share_of_resolution_breaches'], 0)} of all resolution breaches.",
     unsafe_allow_html=True)
 
-hire_more = max(k["rep_hire_minus_reroster_pp_max"], k["rep_hire_minus_reroster_pp_sum_max"])
 st.markdown(
     tag("SYNTHETIC") + f"<b>Capacity and roster (planning scenario at {scale}x volume).</b> A desk this size needs "
     f"about {k['staff_fte_current']} FTE ({k['staff_fte_continuous']:.1f} in pure workload maths; "
@@ -133,7 +140,9 @@ st.markdown(
     f"{P(k['staff_sl_sum_today_by_day'])} → {P(k['staff_sl_sum_proposed'])} under the conservative rule), provided "
     "today's roster really is weekday-weighted and weekend follow-ups are done when they arise. Hiring "
     f"{k['staff_hire_extra_fte_equiv_by_day']:.1f} FTE of weekend shifts instead costs about "
-    f"€{k['bc_hire_first_year_eur'] / 1000:,.0f}k in year one for at most {hire_more:.1f} points more. No roster beats "
+    f"€{k['bc_hire_first_year_eur'] / 1000:,.0f}k in year one and buys +{k['rep_hire_minus_reroster_pp_min']:.1f} to "
+    f"+{k['rep_hire_minus_reroster_pp_max']:.1f} points more (optimistic rule; +{k['rep_hire_minus_reroster_pp_sum_min']:.1f} "
+    f"to +{k['rep_hire_minus_reroster_pp_sum_max']:.1f} conservative). No roster beats "
     f"the {P(k['staff_process_ceiling'])} ceiling set by slow and missed pickups.", unsafe_allow_html=True)
 
 st.subheader("Recommendation")
@@ -146,13 +155,6 @@ with st.container(border=True):
             # "~" pairs would render as strikethrough in Markdown
             impact, measure, risk = (s.replace("~", "about ") for s in (impact, measure, risk))
             st.markdown(f"**{title}** ({owner})\n- Impact: {impact}\n- Measure: {measure}\n- Risk: {risk}")
-
-# ---------------------------------------------------------------------------------------------
-# The two headline charts
-# ---------------------------------------------------------------------------------------------
-st.subheader("The two charts behind the headline")
-ui.show(C.fig_sla_trend(ui.load("kpi_monthly"), goal), key="p1_sla_trend")
-ui.show(C.fig_roster_sl(ui.load("staff_sim_summary"), goal), key="p1_roster_sl")
 
 # ---------------------------------------------------------------------------------------------
 # Story map: which page answers which question

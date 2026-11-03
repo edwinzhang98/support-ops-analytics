@@ -16,7 +16,7 @@ from .staffing import requirement
 def staffing_whatif(demand: pd.DataFrame, st: dict, today_scheduled: np.ndarray, *,
                     sl_goal: float, max_occupancy: float, shrinkage: float, aht_factor: float = 1.0,
                     volume_factor: float = 1.0, live_target_min: float | None = None) -> dict:
-    """Recompute the hourly requirement and the cheapest demand-shaped roster for new assumptions,
+    """Recompute the hourly requirement and the cheapest workload-matched roster for new assumptions,
     and compare with today's (assumed) roster."""
     st2 = {**st}
     if live_target_min is not None:

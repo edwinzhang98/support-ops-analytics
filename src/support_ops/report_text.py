@@ -45,15 +45,17 @@ def recommendations(k: dict) -> list[tuple[str, str, str, str, str]]:
          "The 2023 data shows a process change, not a capacity shortfall [REAL]; hiring would mainly buy response "
          f"SLA, which is not the SLA that fell. Avoids ~€{k['bc_hire_first_year_eur'] / 1000:,.0f}k in year one "
          "for the hire option in the planning scenario [SYNTHETIC].",
-         f"Weekly volume vs 2023 (early warning: sustained > +{k['growth_sl_within_1pt_no_deflection'] * 100:.0f}% "
-         f"- re-run this capacity model; hard limit: +{k['growth_holds_until_no_deflection'] * 100:.0f}%), share of "
-         "contacts reaching an agent within target (trigger: < 90%), agent utilisation (trigger: > 85%)",
+         f"Weekly volume vs 2023: early warning above +{k['growth_sl_within_1pt_no_deflection'] * 100:.0f}% "
+         f"(~{k['volume_weekly_trigger_early']} tickets/week vs {k['volume_weekly_mean']:.0f}) for four weeks - re-run this "
+         f"capacity model; hard trigger above +{k['growth_holds_until_no_deflection'] * 100:.0f}% "
+         f"(~{k['volume_weekly_trigger_hard']}/week). Also: < 90% of contacts reaching an agent within target, "
+         "utilisation > 85%",
          "Volume grows faster than expected; mitigated by the trigger and by deflection headroom"),
         ("4. Re-roster toward workload: more weekend cover, fewer weekday overlaps - after checking today's real roster",
          "WFM / scheduling + team leads",
          f"[SYNTHETIC] Same headcount, simulated response SLA {P(k['staff_sl_today_by_day'])} → "
-         f"{P(k['staff_sl_proposed'])} (+{k['rep_gain_pp_vs_by_day_min']:.1f} to +{k['rep_gain_pp_vs_by_day_max']:.1f} "
-         f"points over 5 simulated years; +{k['rep_gain_pp_vs_by_day_sum_min']:.1f} to "
+         f"{P(k['staff_sl_proposed'])} under the optimistic rule (+{k['rep_gain_pp_vs_by_day_min']:.1f} to "
+         f"+{k['rep_gain_pp_vs_by_day_max']:.1f} points over 5 simulated years; +{k['rep_gain_pp_vs_by_day_sum_min']:.1f} to "
          f"+{k['rep_gain_pp_vs_by_day_sum_max']:.1f} under the conservative rule). Only if today's roster is "
          "weekday-weighted and weekend follow-up work is done when it arises.",
          "Response SLA and queue wait by hour of week; weekend vs weekday response SLA",
@@ -65,7 +67,8 @@ def recommendations(k: dict) -> list[tuple[str, str, str, str, str]]:
          f"~{k['email_alert_uplift_pp_base']:.1f} points (illustration; the catch rate is unknown until piloted).",
          "Share of emails answered within 60 min; alerts fired vs answered within 15 min",
          f"Only {P(k['email_breach_near_miss_share'], 0)} of email breaches are near-misses; alert fatigue"),
-        ("6. Pilot self-service for pricing/licensing and invoicing; route feature requests to a feedback portal",
+        ("6. Pilot self-service for pricing/licensing and invoicing (plus setup guides and a training catalogue); "
+         "route feature requests to a feedback portal",
          "Self-service / knowledge owner",
          f"[ASSUMPTION x SYNTHETIC] Base case deflects {P(k['auto_deflected_share_base'], 0)} of tickets, "
          f"~{k['auto_hours_saved_week_base']:.0f} agent-hours/week, ~{k['auto_fte_freed_base']} FTE of capacity "
@@ -101,7 +104,7 @@ f"{P(k['rca_late_share_h1'])} to {P(k['rca_late_share_h2'])} of all tickets, ris
 f"The median resolution time barely moved ({k['resolution_median_h_h1']:.0f} → {k['resolution_median_h_h2']:.0f} h), "
 f"but the 90th percentile doubled ({k['resolution_p90_h_jan']:.0f} → {k['resolution_p90_h_dec']:.0f} h). It happened "
 f"in every channel, priority, topic, tier and agent: none of {k['hotspots_tested_per_sla']:,} segment combinations stands "
-f"out after a multiple-testing check, and breach rates do not rise with workload. Separately, "
+f"out for resolution after a multiple-testing check, and breach rates do not rise with workload. Separately, "
 f"{k['stale_never_resolved']} tickets ({P(k['stale_share_of_tickets'])}) were never resolved; they are "
 f"{P(k['stale_share_of_resolution_breaches'], 0)} of all resolution breaches.")}</li>
 <li>{S(f"<b>Capacity and roster (planning scenario at 20x volume):</b> a desk this size needs about "
@@ -109,16 +112,18 @@ f"{k['staff_fte_current']} FTE ({k['staff_fte_continuous']:.0f} in pure workload
 f"{k['sens_fte_aht_low']}-{k['sens_fte_aht_high']} if handle times are 30% lower or higher). Spreading the same "
 f"people by workload rather than by new-ticket counts moves cover from weekdays to weekends and lifts simulated "
 f"response SLA by ~2 points. Hiring {k['staff_hire_extra_fte_equiv_by_day']:.1f} FTE of weekend shifts instead costs "
-f"~€{k['bc_hire_first_year_eur'] / 1000:,.0f}k in year one for at most "
-f"{max(k['rep_hire_minus_reroster_pp_max'], k['rep_hire_minus_reroster_pp_sum_max']):.1f} points more. No roster beats the "
+f"~€{k['bc_hire_first_year_eur'] / 1000:,.0f}k in year one and buys +{k['rep_hire_minus_reroster_pp_min']:.1f} to "
+f"+{k['rep_hire_minus_reroster_pp_max']:.1f} points more under the optimistic rule (+{k['rep_hire_minus_reroster_pp_sum_min']:.1f} "
+f"to +{k['rep_hire_minus_reroster_pp_sum_max']:.1f} under the conservative rule). No roster beats the "
 f"{P(k['staff_process_ceiling'])} ceiling set by slow and missed pickups.")}</li>
 </ol></div>
 <div class="callout"><b>Roster headline</b> {S("")} Same {k['staff_fte_current']}-FTE desk (20x scenario; today's roster
 assumed weekday-weighted): workload-matched roster → simulated <b>response SLA {P(k['staff_sl_today_by_day'])} →
 {P(k['staff_sl_proposed'])}</b> under the optimistic rule ({P(k['staff_sl_sum_today_by_day'])} →
 {P(k['staff_sl_sum_proposed'])} under the conservative rule). Across 5 simulated years the gain is
-+{k['rep_gain_pp_vs_by_day_min']:.1f} to +{k['rep_gain_pp_vs_by_day_max']:.1f} points. The gain depends on today's real
-roster (+{min(k['staff_gain_pp_vs_flat'], k['staff_gain_pp_vs_by_day']):.1f} to +{k['staff_gain_pp_vs_business_hours']:.1f} points across three plausible versions) and on weekend
++{k['rep_gain_pp_vs_by_day_min']:.1f} to +{k['rep_gain_pp_vs_by_day_max']:.1f} points (optimistic rule;
++{k['rep_gain_pp_vs_by_day_sum_min']:.1f} to +{k['rep_gain_pp_vs_by_day_sum_max']:.1f} conservative). The gain depends on today's real
+roster (+{min(k['staff_gain_pp_vs_flat'], k['staff_gain_pp_vs_by_day']):.1f} to +{k['staff_gain_pp_vs_business_hours']:.1f} points across three plausible versions, optimistic rule) and on weekend
 follow-up work being done when it arises. The SLA that actually fell, resolution, is not moved by any roster.</div>
 """), ("fig", "sla_trend", "The headline problem, from the real export: resolution SLA (orange) falls through the year; "
        "response SLA (blue) does not."),
@@ -330,7 +335,8 @@ real roster and how weekend follow-ups are handled today.</p>"""),
         ("fig", "growth", f"With the workload-matched roster, simulated response SLA stays within a point of today's level up to "
          f"+{k['growth_sl_within_1pt_no_deflection'] * 100:.0f}% volume and slips after that "
          f"({P(k['growth_sl_at_plus10_no_deflection'])} at +10%, {P(k['growth_sl_at_plus25_no_deflection'])} at +25%). "
-         f"The roster breaks the staffing goal itself at about +{k['growth_holds_until_no_deflection'] * 100:.0f}%. With "
+         f"The roster still meets the staffing goal itself at +{k['growth_holds_until_no_deflection'] * 100:.0f}% and fails it at "
+         f"+{k['growth_staffing_fails_at_no_deflection'] * 100:.0f}%. With "
          f"base-case deflection the team absorbs about +{k['growth_sl_within_1pt_with_deflection'] * 100:.0f}% before "
          "response SLA slips a point. These are the triggers for revisiting headcount."),
     ]
@@ -373,9 +379,11 @@ def _business(k):
 process change, not a capacity shortfall, and hiring would mainly buy response SLA, which is not the SLA that fell.
 Clear and police stale tickets. Find the resolution slow path. Pilot the email alert and self-service. Re-roster toward
 weekend workload once WFM confirms today's roster. If weekly volume runs more than
-+{k['growth_sl_within_1pt_no_deflection'] * 100:.0f}% above 2023 for a month, re-run this capacity model; at about
-+{k['growth_holds_until_no_deflection'] * 100:.0f}% (or if fewer than 90% of contacts reach an agent within target) the
-roster no longer meets its staffing goal and the choice is hire or deflect.</div>"""),
++{k['growth_sl_within_1pt_no_deflection'] * 100:.0f}% above 2023 (about {k['volume_weekly_trigger_early']} tickets a week
+against {k['volume_weekly_mean']:.0f}) for four weeks, re-run this capacity model. Above
++{k['growth_holds_until_no_deflection'] * 100:.0f}% (about {k['volume_weekly_trigger_hard']} a week), or if fewer than 90% of
+contacts reach an agent within target, the choice is hire or deflect: the planning roster still meets its staffing goal at
++{k['growth_holds_until_no_deflection'] * 100:.0f}% and fails it at +{k['growth_staffing_fails_at_no_deflection'] * 100:.0f}%.</div>"""),
     ]
 
 
