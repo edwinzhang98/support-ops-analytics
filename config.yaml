@@ -42,8 +42,8 @@ staffing:
   handle_time_cv: 0.8                # lognormal coefficient of variation used in simulation
   min_agents_per_pool: 1             # 24/7 coverage: at least one agent on each pool every hour
   shift_length_h: 8
-  shift_starts: [0, 4, 8, 12, 16, 20]   # allowed start hours for the proposed roster
-  current_roster_starts: [0, 8, 16]     # assumed current roster: 3 equal shifts, 7 days
+  shift_starts: [0, 8, 12, 16]          # allowed starts for the proposed roster: night, day, mid, late
+  # Today's roster is unknown; hypotheses use 3 x 8h shifts starting 00/08/16 (support_ops.roster.HYPOTHESES)
   shifts_per_fte_week: 5
 
 # Business case (assumptions, to be validated with Finance)
