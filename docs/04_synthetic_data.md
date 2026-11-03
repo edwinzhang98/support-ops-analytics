@@ -4,9 +4,11 @@
 volume**, generated in [`src/support_ops/synth.py`](../src/support_ops/synth.py). Arrival rates come from the export.
 Every ticket's attributes, interactions, resolution outcome and first-response delay are copied from a real ticket
 created in the same month. Handle times and the timing of follow-up work are assumptions. The synthetic year matches
-the export's mix to within 0.51 points and its resolution SLA to within 0.02 points. It is used **only** for hourly
-staffing, roster comparison, simulation, growth headroom and FTE/cost maths. Every finding about what happened in 2023
-comes from the real export.
+the export's mix to within 0.51 points and its resolution SLA to within 0.02 points. Its pickups run about half a
+point faster than the export's (process ceiling 87.8% vs a real response SLA of 87.2%, a favourable draw), so
+absolute synthetic SLA levels are slightly optimistic; comparisons between rosters are not affected. It is used
+**only** for hourly staffing, roster comparison, simulation, growth headroom and FTE/cost maths. Every finding about
+what happened in 2023 comes from the real export.
 
 Tags: **[REAL]** = the export, **[SYNTHETIC]** = generated, **[ASSUMPTION]** = an input not in the data
 ([assumptions.md](assumptions.md)). Numbers come from `reports/key_numbers.json` or from the named table in
@@ -176,8 +178,9 @@ Real values come from `kpi_*`; synthetic values from `kpi_*_synth`. Both are pro
 | Share of tickets by hour of day | raw, 3.1–5.8% per hour | smoothed, 3.5–4.7% | max 1.07 points | Difference is the intended smoothing. |
 | Share of tickets by quarter | Q3 24.0% | Q3 25.3% | max 1.28 points (Q3) | The real Q3 was a little quieter; synthetic months carry no month-level volume noise. |
 | Resolution SLA, 2023 | 66.35% | 66.33% (`synth_resolution_sla`) | −0.02 points | Outcomes reproduced. |
-| Resolution SLA by month | Jan 76.3% → Dec 59.7% | Jan 76.7% → Dec 59.3% | max 1.6 points (Oct) | The 2023 decline is carried into the synthetic year. |
-| Response SLA | 87.2% | 85.8% | — | **Not a calibration target.** The synthetic value is a model output: real pickup delays plus simulated queueing under the assumed roster. It is lowest at weekends (75.6% vs 86.6% real), where that roster is short. |
+| Resolution SLA by month | Jan 76.3% → Dec 59.7% | Jan 76.7% → Dec 59.2% | max 1.6 points (Oct) | The 2023 decline is carried into the synthetic year. |
+| Pickup within target (process ceiling) | 87.2% (real response SLA; no queue forms at the export's volume, so it measures pickup) | 87.8% (`staff_process_ceiling`) | +0.5 points | Sampling luck: the base year (seed 42) draws slightly faster pickups than the export. The five replications give 87.1–87.3% (`staff_replications`); a one-off check of generator seeds 0–299 (not in the pipeline) gave a mean of 87.2% (sd 0.15), with seed 42 the 2nd highest. Absolute synthetic SLA levels are therefore about 0.5 points optimistic; roster gains are unaffected. |
+| Response SLA | 87.2% | 85.8% | — | **Not a calibration target.** The synthetic value is a model output: real pickup delays plus simulated queueing under the assumed roster (optimistic rule). It is lowest at weekends (75.6% vs 86.6% real), where that roster is short. |
 
 The unit test `tests/test_roster_synth.py::test_synthetic_mix_matches_real` regenerates the year with a different
 seed (1). It checks that the ratio of synthetic to real tickets is within 0.5 of 20, that channel / topic / priority

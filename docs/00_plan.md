@@ -50,7 +50,7 @@ Why we scale up: the export averages 6.4 tickets/day, about 0.3 per hour. Most h
 > re-run against each month's weekday mix (p = 0.12). Details: `docs/assumptions.md`.
 
 1. **Scale factor = 20×**, giving about 47k tickets/year, about 128/day. That is "tens of thousands of tickets" and a plausible mid-size B2B desk. It is a scenario parameter in `config.yaml`, not a fact.
-2. **One synthetic year (2023), not two.** The export shows no volume trend and no significant monthly seasonality (χ² p = 0.14). A second year would have to be invented rather than calibrated.
+2. **One synthetic year (2023), not two.** The export shows no volume trend and no significant monthly seasonality (χ² p = 0.12 against each month's weekday mix). A second year would have to be invented rather than calibrated.
 3. **Current roster is unknown → assumed** to be flat 3-shift, 24/7 coverage. Headcount is calibrated so the simulated response SLA matches the export's observed 2023 level. The re-roster gain depends on this assumption, so it gets its own sensitivity analysis.
 4. **SLA goal = 90% attainment** for both response and resolution. The data has per-ticket deadlines but no goal. 90% is adjustable in the dashboard.
 5. **Handle time is not in the data** → estimated as first-touch minutes plus follow-up minutes × (interactions − 1), using stated assumptions with ±30% sensitivity.

@@ -8,7 +8,7 @@ Labels: **[REAL]** computed from the 2023 export · **[SYNTHETIC]** 20× plannin
 
 ## Summary
 
-- **The SLA that fell is resolution (solved on time), not response (first reply on time)** [REAL]. On-time resolution went from 73.6% in Q1 to 60.6% in Q4 2023 (95% CI 56.6–64.5%). Response SLA held at 87.2% for the year and improved in H2 (85.4% → 89.1%).
+- **The SLA that fell is resolution (solved on time), not response (first reply on time)** [REAL]. On-time resolution went from 73.5% in Q1 to 60.6% in Q4 2023 (95% CI 56.6–64.5%). Response SLA held at 87.2% for the year and improved in H2 (85.4% → 89.1%).
 - **The data shows a process change plus a stale backlog, not volume, mix or a capacity shortfall** [REAL]. Volume was flat (H2 −2.7% vs H1); shifts in channel or topic mix explain −0.3 of the −12.9 points; breach rates do not rise when the desk is busier; the slowdown appears in every channel, priority, topic, tier and agent at once. Separately, 418 tickets (17.9%) were never resolved and account for 53% of all resolution breaches. A capacity change outside the ticket data (time diverted, tooling) cannot be excluded.
 - **What changed is the slow tail** [REAL]. Tickets resolved late rose from 9.8% to 21.8% of all tickets, gradually from March to October. The median resolution time barely moved (20.3 → 23.4 h) while the 90th percentile doubled (46.5 → 104.0 h). The export has no status history, so the cause — waiting on customers, engineering or tier 2, a tooling or policy change — cannot be identified from this data. The next step is to pull time-in-status from the ticket audit log.
 
@@ -18,7 +18,7 @@ Labels: **[REAL]** computed from the 2023 export · **[SYNTHETIC]** 20× plannin
 
 | Quarter (ticket created) | Tickets | Resolution SLA (95% CI) | Response SLA (95% CI) |
 |---|---|---|---|
-| Q1 2023 | 586 | **73.6%** (69.8–77.0) | 86.3% (83.3–88.9) |
+| Q1 2023 | 586 | **73.5%** (69.8–77.0) | 86.3% (83.3–88.9) |
 | Q2 2023 | 595 | 67.7% (63.9–71.4) | 84.5% (81.4–87.2) |
 | Q3 2023 | 560 | 63.4% (59.3–67.3) | 89.1% (86.3–91.4) |
 | Q4 2023 | 589 | **60.6%** (56.6–64.5) | 89.1% (86.4–91.4) |
@@ -41,7 +41,7 @@ The Q1 → Q4 change in resolution SLA is −12.9 points; the Q1 and Q4 interval
 
 | # | Hypothesis | Verdict | Key evidence |
 |---|---|---|---|
-| H1 | Volume grew | Rejected | H2 −2.7% vs H1; every month within chance variation |
+| H1 | Volume grew | Rejected | H2 −2.7% vs H1; month-to-month variation no larger than chance (p = 0.12) |
 | H2 | Mix shifted toward harder channels or topics | Rejected | Shift-share: mix −0.3 pts, within-segment rate −12.7 pts |
 | H3 | Capacity shortfall / understaffing | Not supported | Breach rate flat across workload levels (trend p 0.28–0.90); no time-slot effect; all 8 agents active every month; active backlog flat at the level Little's law predicts. Caveat: off-ticket capacity changes are not observable |
 | H4 | A specific segment, agent or time slot | Not supported | 0 of 1,268 resolution segment combinations significant after a false-discovery correction; agents, priorities, topics within chance |
@@ -51,7 +51,7 @@ The Q1 → Q4 change in resolution SLA is −12.9 points; the Q1 and Q4 interval
 
 ### H1 — Volume growth: rejected [REAL]
 
-- 1,181 tickets in H1, 1,149 in H2 (−2.7%). Monthly totals ran 159–224; tickets per active day 5.5–7.5 (`kpi_monthly`). Each month sits inside the range expected from random variation around 6.4 tickets/day; no month is an outlier.
+- 1,181 tickets in H1, 1,149 in H2 (−2.7%). Monthly totals ran 159–224; tickets per active day 5.5–7.5 (`kpi_monthly`). Month-to-month variation around 6.4 tickets/day is no larger than chance (χ² of monthly counts against each month's weekday mix, p = 0.12, `volume_month_seasonality_p`): January ran a little above the average and September a little below, but nothing points to growth.
 - Weekly resolutions track weekly arrivals all year (`kpi_backlog_daily`); there are no arrival spikes.
 - The months with the lowest resolution SLA (October–December, 59.7–61.5%) had ordinary volume (176–213 tickets).
 
@@ -66,7 +66,7 @@ What a shortfall looks like in ticket data: tickets that arrive when more work i
 - **Load at arrival.** Tickets grouped into fifths by the number of tickets already in progress when they arrived: resolution breach rates 34.5%, 32.6%, 32.0%, 35.6%, 33.5% (trend p = 0.90); response 14.6%, 13.9%, 10.3%, 12.0%, 12.9% (p = 0.28). Grouped by same-day volume: p = 0.37 (resolution) and 0.40 (response) (`rca_load_vs_sla`). Across the four trend tests p runs 0.28–0.90: no load effect.
 - **Time slots.** Response breaches do not differ by hour of day (p = 0.42), day of week (p = 0.30) or weekday vs weekend (p = 0.77); resolution: p = 0.33 / 0.46 / 0.75. The one lower value, response by 6-hour band (p = 0.08), is the afternoon band being slightly *better* (90.1%), not a bad slot (`rca_time_slots`, `kpi_by_dimension`).
 - **Agents.** All 8 named agents handled tickets every month, and 7 of 8 declined from H1 to H2: the decline is shared, not a gap left by someone.
-- **Backlog.** Active backlog (open 7 days or less) averaged 15.1 tickets, maximum 26, flat all year. Little's law (arrivals per day × average time a ticket stays active) predicts 15.7. The desk keeps up with arrivals.
+- **Backlog.** Active backlog (open 7 days or less) averaged 15.1 tickets, maximum 26, flat all year. Little's law (arrivals per day × average time a ticket stays active) predicts 15.4. The desk keeps up with arrivals.
 - **Distribution.** The median moved 20.3 → 23.4 h. The change is in the tail. A shortfall slows everyone.
 
 Caveat, to be stated with every use of this finding: the export records ticket events, not agent time. A capacity change outside the ticket data — time diverted to projects or training, a tooling change that slowed every touch, higher absence — would not be visible here. The data shows a process change, not a capacity shortfall; it does not prove that capacity was unchanged. The roster and handle-time data in section 4 would settle this.
@@ -85,7 +85,7 @@ Why it cannot be tested directly: at about 0.3 tickets per hour, most of the 168
 
 Two real facts matter for planning: (a) weekend arrivals run at 0.45× the weekday rate, but weekend resolutions at 0.81× — follow-up work is being done at weekends (indicative only: the export's resolution clock ignores the calendar); (b) the hourly arrival curve is flat, which is unusual for a European B2B desk, so the export says nothing about intraday peaks.
 
-In the 20× planning scenario [SYNTHETIC], a roster that sets daily headcount by new-ticket counts is short in 30 of 168 hours, all at weekends, and spreading the same people by workload is worth about +1.8 points of simulated response SLA (+1.5 to +2.0 across five synthetic years; +1.3 to +1.9 under the conservative response rule). That is a planning result about *response* SLA under an assumed roster; it says nothing about the 2023 resolution decline. Full treatment: [capacity_plan.md](capacity_plan.md).
+In the 20× planning scenario [SYNTHETIC], a roster that sets daily headcount by new-ticket counts is short in 30 of 168 hours, all at weekends, and spreading the same 23 FTE by workload (the workload-matched roster) is worth about +1.8 points of simulated response SLA under the optimistic response rule (+1.5 to +2.0 across five synthetic years) and +2.1 under the conservative rule (+1.3 to +1.9). That is a planning result about *response* SLA under an assumed roster; it says nothing about the 2023 resolution decline. Full treatment: [capacity_plan.md](capacity_plan.md).
 
 ### H6 — Stale backlog: confirmed as a constant drag [REAL]
 
@@ -104,11 +104,11 @@ In the 20× planning scenario [SYNTHETIC], a roster that sets daily headcount by
 
 ### Response-time breaches are pickup failures, not queueing [REAL]
 
-297 response breaches: chat 135, email 103, phone 59. Median lateness: chat 2.1 min, phone 1.8 min, email 209.8 min (3.5 h). 76.7% of email breaches are more than 60 minutes late and 14 were never answered; only 9.7% are near-misses (60 minutes late or less) (`rca_breach_lateness`). A queue produces minutes of lateness; hours of lateness means the email was not seen. Chat and phone breaches are seconds to a couple of minutes late on a 2-minute target. Both signatures point to alerting and routing, which is why the recommended fixes are a 45-minute unanswered-email alert and push routing for chat/phone — as pilots. Illustration only: catching 25 / 50 / 75% of the 103 email breaches would lift response SLA by 1.1 / 2.2 / 3.3 points; the catch rate is unknown until piloted, so no SLA credit is taken.
+297 response breaches: chat 135, email 103, phone 59. Median lateness: chat 2.1 min, phone 1.8 min, email 209.8 min (3.5 h). 76.7% of email breaches are more than 60 minutes late and 14 were never answered; only 9.7% are near-misses (60 minutes late or less) (`rca_breach_lateness`). A queue produces minutes of lateness; hours of lateness means the email was not seen. Chat and phone breaches are typically about two minutes late on a 2-minute target. Both signatures point to alerting and routing, which is why the recommended fixes are a 45-minute unanswered-email alert and push routing for chat/phone — as pilots. Illustration only: catching 25 / 50 / 75% of the 103 email breaches would lift response SLA by 1.1 / 2.2 / 3.3 points; the catch rate is unknown until piloted, so no SLA credit is taken.
 
 ### Competing-risk note
 
-"Resolved late" and "never resolved" compete for the same tickets. From H1 to H2, on-time fell 8.6 points (70.6% → 62.0%), late rose 12.0 points (9.8% → 21.8%) and never-resolved fell 3.3 points (19.6% → 16.3%). Part of the late rise may therefore be tickets that previously went stale and now close late — better for the customer, still a breach. If H2 had kept H1's late rate, on-time resolution would have been about 73.9%; that is a target to aim at, not a forecast. Status history would separate the two effects.
+"Resolved late" and "never resolved" compete for the same tickets. From H1 to H2, on-time fell 8.7 points (70.6% → 62.0%), late rose 11.9 points (9.8% → 21.8%) and never-resolved fell 3.3 points (19.6% → 16.3%; differences from unrounded shares). Part of the late rise may therefore be tickets that previously went stale and now close late — better for the customer, still a breach. If H2 had kept H1's late rate, on-time resolution would have been about 73.9%; that is a target to aim at, not a forecast. Status history would separate the two effects.
 
 ## 3. What we cannot tell from this data
 

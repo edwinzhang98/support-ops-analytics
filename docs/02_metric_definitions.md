@@ -197,7 +197,7 @@ come from `reports/key_numbers.json`. Where a value comes from a processed table
 - **Formula.** `resolution_attainment = resolution_met / resolution_evaluable` (same pattern as 2.4), with a Wilson CI.
 - **Computed in.** `sql/01`, `sql/02`, `sql/05`. Agent H1 vs H2 values: `resolution_attainment_h1`, `_h2` and `_change`
   in `sql/05`.
-- **Example [REAL].** 66.4% in 2023 (1,546 of 2,330). Q1 73.6% (95% CI 69.8–77.0%) → Q4 60.6% (56.6–64.5%). January
+- **Example [REAL].** 66.4% in 2023 (1,546 of 2,330). Q1 73.5% (95% CI 69.8–77.0%) → Q4 60.6% (56.6–64.5%). January
   76.3% → December 59.7%.
 - **Caveats.** Every ticket is past due at the snapshot, so the denominator is all tickets. That makes attainment equal
   to `share_on_time` in `rca_resolution_composition`.
@@ -263,13 +263,13 @@ come from `reports/key_numbers.json`. Where a value comes from a processed table
 
 ### 4.4 Little's law check on the active backlog
 - **Formula** (`rca.stale_backlog` → `active_backlog_littles_law`): expected active backlog L = λ × W, where
-  - λ = 2,330 tickets / 356 days with at least one ticket = 6.54 per day;
+  - λ = 2,330 tickets / 363 calendar days = 6.42 per day (`real_tickets_per_day`);
   - W = mean days a ticket counts as active = mean over tickets of `min(resolution_h / 24, 7)` for resolved tickets,
     and 7 for never-resolved tickets = 2.39 days.
-- **Result [REAL].** L = 15.7 expected vs 15.1 observed mean. Active work is what steady flow predicts; there is no
+- **Result [REAL].** L = 15.4 expected vs 15.1 observed mean. Active work is what steady flow predicts; there is no
   hidden queue.
-- **Caveat.** λ uses days with tickets, not calendar days. With all 363 calendar days, L = 15.4. Either way it is
-  close to the observed level.
+- **Caveat.** λ uses calendar days. Counting only the 356 days with at least one ticket (λ = 6.54) gives L = 15.7.
+  Either way it is close to the observed level.
 
 ---
 
@@ -497,10 +497,10 @@ real team. Hour of week (`how`) runs from Mon 00:00 = 0 to Sun 23:00 = 167.
   today's-roster hypotheses use 00 / 08 / 16. Coverage wraps from Sunday night into Monday.
 - **Weekly shifts.** The minimum number of shifts such that scheduled agents ≥ `scheduled_required` in all 168 hours.
   This is solved as an integer program (`roster.optimize_min_shifts`, SciPy `milp` / HiGHS). Base case: 114 shifts
-  (recomputed from `staff_requirement` for this document).
+  (`staff_min_shifts`), the cheapest cover.
 - **FTE.** `FTE = ceil(weekly shifts / 5)` (`roster.fte_from_shifts`; one FTE works 5 shifts = 40 h a week). Base case:
-  **23 FTE** **[SYNTHETIC]**. The roster budget is FTE × 5 = 115 shifts (`staff_weekly_shifts`). The
-  workload-matched roster spreads exactly those 115 shifts to maximise the worst hour's ratio of scheduled to required
+  114 / 5 = 22.8, rounded up to **23 FTE** **[SYNTHETIC]**. The roster budget is FTE × 5 = 115 shifts
+  (`staff_weekly_shifts`). The workload-matched roster spreads exactly those 115 shifts to maximise the worst hour's ratio of scheduled to required
   agents, with at most 23 shifts on any day (one per person) and ties broken toward high-volume hours
   (`roster.optimize_fixed_budget`).
 - **FTE-equivalent.** Extra shifts / 5, used for costing. Example: 7 extra weekend shifts = 1.4 FTE-equivalent, or 2
@@ -521,7 +521,7 @@ real team. Hour of week (`how`) runs from Mon 00:00 = 0 to Sun 23:00 = 167.
 - **Analytic counterpart** (`staffing.erlang_check`): `erlang_live_queue_sl` and `erlang_async_queue_sl` apply Erlang C
   hour by hour to a roster, weighted by volume. Async work gets the capacity left over after live work.
 - **Example [SYNTHETIC].** 99.8% for the workload-matched roster vs 97.9% for today's roster (assumed weekday-weighted).
-- **Used for the growth trigger.** The staffing goal is met when `queue_sl` ≥ 90% and utilisation ≤ 85% (6.14).
+- **Used for growth headroom and the hard volume trigger.** The staffing goal is met when `queue_sl` ≥ 90% and utilisation ≤ 85% (6.14).
 
 ### 6.11 Process ceiling
 - **Definition.** The response SLA achievable with zero queueing, given real pickup behaviour.
@@ -533,6 +533,10 @@ real team. Hour of week (`how`) runs from Mon 00:00 = 0 to Sun 23:00 = 167.
   shifts slightly (87.9% in options C and B + C).
 - **Why.** At the export's volume no queue ever forms. Real FRT therefore measures how quickly agents pick work up
   when they are free, which is process, not staffing.
+- **Caveat.** The base synthetic year (seed 42) happens to draw slightly faster pickups than the export: 87.8%
+  against a real response SLA of 87.2%. The five independent replications give 87.1–87.3% (`staff_replications`), so
+  absolute synthetic SLA levels are about half a point optimistic; roster gains are unaffected
+  ([04](04_synthetic_data.md#validation-results)).
 
 ### 6.12 End-to-end response time: two rules
 - **Optimistic rule** (`response_min`, `response_met`): `response_min = max(pickup delay, queue wait)`; met if
@@ -541,7 +545,7 @@ real team. Hour of week (`how`) runs from Mon 00:00 = 0 to Sun 23:00 = 167.
 - **Conservative rule** (`response_met_sum`): met if `pickup delay + queue wait ≤ target`. This assumes the two
   delays add up.
 - **Metrics.** `response_sl` and `response_sl_sum` = shares over all synthetic tickets (never touched = breach).
-- **Example [SYNTHETIC].** Same 23-FTE desk: today's roster (assumed weekday-weighted) 85.8% / 82.6% → workload-matched
+- **Example [SYNTHETIC].** The 23-FTE scenario desk: today's roster (assumed weekday-weighted) 85.8% / 82.6% → workload-matched
   87.6% / 84.7% (optimistic / conservative).
 - **Caveat.** How the two delays combine is unknown; the truth lies between the two rules, so both are always quoted.
   Because the export's on-time response times are spread evenly up to the target, the sum rule pushes many of them
@@ -561,9 +565,20 @@ real team. Hour of week (`how`) runs from Mon 00:00 = 0 to Sun 23:00 = 167.
 - **Definition.** The largest volume increase tested (factors 1.00–1.50) at which the workload-matched roster still
   meets the staffing goal: queue on-time ≥ 90% and utilisation ≤ 85% (`pipeline.key_numbers`, function `holds`, on
   `staff_growth`). Each growth point regenerates the synthetic year at the higher volume with the same random seeds
-  (`business_case.simulate_growth`).
-- **Result [SYNTHETIC].** +25% without deflection. With base-case deflection the goal is still met at +50%, the end of
-  the tested range.
+  (`business_case.simulate_growth`). A second measure, "response SLA within a point" (function `within_1pt`), is the
+  largest increase at which simulated response SLA (optimistic rule) stays within 1 point of its no-growth level.
+- **Result [SYNTHETIC].** Staffing goal: met up to +25% without deflection (`growth_holds_until_no_deflection`),
+  failed at +30% (`growth_staffing_fails_at_no_deflection`). Response SLA slips sooner: it stays within a point of
+  today's level only up to +5% (`growth_sl_within_1pt_no_deflection`; 86.1% at +10% and 79.9% at +25% against 87.6%
+  at +0%, optimistic rule). With base-case deflection, response SLA stays within a point up to +30%
+  (`growth_sl_within_1pt_with_deflection`) and the staffing goal is still met at +50%, the top of the range tested
+  (not a limit).
+- **Volume triggers built on it.** Baseline: the 2023 mean of full Monday–Sunday weeks, 45.3 tickets
+  (`volume_weekly_mean`; full weeks ran 34–63) **[REAL]**. Early warning: weekly volume more than +5% above it (about
+  48 a week, `volume_weekly_trigger_early`) for four consecutive weeks → re-run the capacity model. Hard trigger:
+  more than +25% (about 57 a week, `volume_weekly_trigger_hard`) for four consecutive weeks → revisit headcount. Once
+  WFM reports them, fewer than 90% of contacts reaching an agent within target or utilisation above 85% for a month
+  are hard triggers too.
 
 ---
 
