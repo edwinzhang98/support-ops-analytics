@@ -50,13 +50,13 @@ def demand_by_how(items: pd.DataFrame, tickets: pd.DataFrame) -> pd.DataFrame:
     hol = pd.to_datetime(HOLIDAYS_2023)
     year_days = pd.date_range("2023-01-01", "2023-12-31", freq="D")
     open_days = year_days[~year_days.isin(hol)]
-    n_days = pd.Series(open_days.dayofweek).value_counts().sort_index()   # 0 = Mon
+    n_days = pd.Series(open_days.day_of_week).value_counts().sort_index()   # 0 = Mon
 
     ts = T0 + pd.to_timedelta(items["arrival_s"], unit="s")
     keep = ts.dt.normalize().isin(open_days)
     it = items[keep.to_numpy()]
     ts = ts[keep]
-    how = (ts.dt.dayofweek * 24 + ts.dt.hour).to_numpy()
+    how = (ts.dt.day_of_week * 24 + ts.dt.hour).to_numpy()
 
     out = pd.DataFrame({"how": np.arange(168)})
     out["dow"] = out["how"] // 24
@@ -70,7 +70,7 @@ def demand_by_how(items: pd.DataFrame, tickets: pd.DataFrame) -> pd.DataFrame:
         out[f"aht_{pool}_min"] = it.loc[m, "service_s"].mean() / 60
     t_ts = tickets["created_at"]
     tk = t_ts.dt.normalize().isin(open_days).to_numpy()
-    th = (t_ts[tk].dt.dayofweek * 24 + t_ts[tk].dt.hour).to_numpy()
+    th = (t_ts[tk].dt.day_of_week * 24 + t_ts[tk].dt.hour).to_numpy()
     out["tickets_per_hour"] = np.bincount(th, minlength=168) / denom
     out["erlangs_live"] = out["live_per_hour"] * out["aht_live_min"] / 60
     out["erlangs_async"] = out["async_per_hour"] * out["aht_async_min"] / 60

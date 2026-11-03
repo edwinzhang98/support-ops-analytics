@@ -252,7 +252,7 @@ def simulate_blended(arrival_s, service_s, is_live, servers_by_hour,
 # ---------------------------------------------------------------------------
 def hour_of_week_index(t0: pd.Timestamp, n_hours: int) -> np.ndarray:
     """Hour-of-week (Mon 00:00 = 0 ... Sun 23:00 = 167) for each hour from t0."""
-    first = t0.dayofweek * 24 + t0.hour
+    first = t0.day_of_week * 24 + t0.hour
     return (first + np.arange(n_hours)) % 168
 
 

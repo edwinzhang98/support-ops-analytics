@@ -396,9 +396,13 @@ def _how_labels(df):
     return [f"{d} {h:02d}" for d, h in zip(df["dow_name"], df["hour"])]
 
 
-def fig_requirement_vs_roster(cov: pd.DataFrame, rosters=("by_day", "proposed")) -> go.Figure:
-    names = {"by_day": "Today's roster (assumed weekday-weighted)", "proposed": "Proposed roster",
-             "flat": "Today (alt.): flat 24/7", "business_hours": "Today (alt.): day-weighted"}
+ROSTER_NAMES = {"by_day": "Today's roster (assumed weekday-weighted)", "proposed": "Proposed roster",
+                "flat": "Today (alt.): flat 24/7", "business_hours": "Today (alt.): day-weighted"}
+
+
+def fig_requirement_vs_roster(cov: pd.DataFrame, rosters=("by_day", "proposed"),
+                              labels: dict | None = None) -> go.Figure:
+    names = {**ROSTER_NAMES, **(labels or {})}
     x = np.arange(168)
     fig = go.Figure()
     fig.add_scatter(x=x, y=cov["scheduled_required"], name="Required (Erlang C + shrinkage)", mode="lines",
@@ -411,13 +415,14 @@ def fig_requirement_vs_roster(cov: pd.DataFrame, rosters=("by_day", "proposed"))
     fig.update_xaxes(tickvals=list(range(0, 168, 24)), ticktext=DAYS, range=[0, 168])
     fig.update_yaxes(rangemode="tozero", dtick=1)
     under = int((cov[f"scheduled_{rosters[0]}"] < cov["scheduled_required"]).sum())
+    under_p = int((cov[f"scheduled_{rosters[1]}"] < cov["scheduled_required"]).sum()) if len(rosters) > 1 else 0
     return _style(fig, "Agents needed vs agents scheduled, every hour of the week",
-                  f"Same headcount: today's assumed roster is short in {under} of 168 hours (weekends, where "
-                  "follow-up work continues); the proposed roster covers every hour.", SYNTH,
-                  "Hour of week", "Agents scheduled (people on shift)", height=440)
+                  f"{names.get(rosters[0], rosters[0])} is short in {under} of 168 hours"
+                  + (f"; the {names.get(rosters[1], rosters[1]).lower()} is short in {under_p}." if len(rosters) > 1
+                     else "."), SYNTH, "Hour of week", "Agents scheduled (people on shift)", height=440)
 
 
-def fig_gap_heatmap(cov: pd.DataFrame, roster: str = "by_day") -> go.Figure:
+def fig_gap_heatmap(cov: pd.DataFrame, roster: str = "by_day", label: str | None = None) -> go.Figure:
     g = cov.assign(gap=cov[f"scheduled_{roster}"] - cov["scheduled_required"])
     z = g.pivot(index="dow_name", columns="hour", values="gap").reindex(DAYS)
     lim = max(2, float(np.abs(z.values).max()))
@@ -427,9 +432,11 @@ def fig_gap_heatmap(cov: pd.DataFrame, roster: str = "by_day") -> go.Figure:
         colorbar=dict(title=dict(text="Agents vs need", side="right"), thickness=10, outlinewidth=0),
         hovertemplate="%{y} %{x}:00: %{z:+.0f} agents vs requirement<extra></extra>"))
     fig.update_yaxes(autorange="reversed", showgrid=False)
-    return _style(fig, "Coverage gap by hour: today's assumed roster minus requirement",
-                  "Red = short of agents, blue = more than needed. Today's assumed roster puts spare people on "
-                  "weekdays and runs short at weekends.", SYNTH, "Hour of day", "", height=360, legend=False)
+    label = label or ROSTER_NAMES.get(roster, roster)
+    short = int((g["gap"] < 0).sum())
+    return _style(fig, f"Coverage gap by hour: {label.lower()} minus requirement",
+                  f"Red = short of agents, blue = more than needed, grey = exactly covered. Short in {short} of 168 "
+                  "hours.", SYNTH, "Hour of day", "", height=360, legend=False)
 
 
 def fig_roster_sl(sim: pd.DataFrame, goal: float = 0.90) -> go.Figure:
@@ -620,3 +627,21 @@ def fig_synth_validation(real_bydim: pd.DataFrame, synth_bydim: pd.DataFrame,
     return _style(fig, "Synthetic scale-up vs real export: ticket mix",
                   f"Every channel, topic and priority share matches within {gap * 100:.1f} points.",
                   "REAL vs SYNTHETIC", "", "Share of tickets (%)", height=420)
+
+
+def fig_deflection_whatif(by_topic: pd.DataFrame) -> go.Figure:
+    """by_topic: output of interactive.deflection_whatif(...)['by_topic']."""
+    d = by_topic[by_topic["deflection_rate"] > 0].sort_values("agent_hours_saved_week")
+    fig = go.Figure(go.Bar(
+        y=d["topic"], x=d["agent_hours_saved_week"], orientation="h", marker=dict(color=SERIES[0], cornerradius=4),
+        customdata=np.c_[d["deflection_rate"], d["tickets_deflected_2023"]],
+        text=[f"{v:.0f} h" for v in d["agent_hours_saved_week"]], textposition="outside",
+        textfont=dict(size=11, color=TEXT_2), cliponaxis=False,
+        hovertemplate="%{y}: %{x:.0f} agent-hours/week saved<br>deflection %{customdata[0]:.0%} · "
+                      "%{customdata[1]:.0f} tickets in the 2023 export<extra></extra>"))
+    fig.update_xaxes(showgrid=True, gridcolor=GRID, rangemode="tozero")
+    fig.update_yaxes(showgrid=False)
+    total = d["agent_hours_saved_week"].sum()
+    return _style(fig, "Agent-hours saved per week with the chosen deflection rates",
+                  f"{total:.0f} agent-hours per week in total at the 20x scale.", SYNTH,
+                  "Agent-hours saved per week", "", height=max(260, 110 + 40 * len(d)), legend=False)

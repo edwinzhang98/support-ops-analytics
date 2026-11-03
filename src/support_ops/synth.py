@@ -58,7 +58,7 @@ def daily_rate_by_weekday(fct: pd.DataFrame, holidays=HOLIDAYS_2023) -> pd.Serie
     start, end = fct["created_date"].min(), fct["created_date"].max()
     days = pd.DataFrame({"date": pd.date_range(start, end, freq="D")})
     days = days[~days["date"].isin(pd.to_datetime(holidays))]
-    days["dow"] = days["date"].dt.dayofweek + 1
+    days["dow"] = days["date"].dt.day_of_week + 1
     counts = fct.groupby("created_date").size()
     days["tickets"] = days["date"].map(counts).fillna(0)
     return days.groupby("dow")["tickets"].mean()
@@ -83,7 +83,7 @@ def generate_tickets(fct: pd.DataFrame, cfg: dict, rng: np.random.Generator) -> 
 
     # 1) arrivals: non-homogeneous Poisson, rate = scale x weekday rate x hour share
     hours = pd.date_range(f"{year}-01-01", f"{year}-12-31 23:00", freq="h")
-    dow = hours.dayofweek + 1
+    dow = hours.day_of_week + 1
     lam = scale * rate.reindex(dow).to_numpy() * prof[hours.hour]
     lam[np.isin(hours.date, list(holidays))] = 0.0
     n_per_hour = rng.poisson(lam)
@@ -134,7 +134,7 @@ def generate_tickets(fct: pd.DataFrame, cfg: dict, rng: np.random.Generator) -> 
     t["resolved_at"] = t["created_at"] + pd.to_timedelta(t["resolution_h"].where(resolved), unit="h")
     t["resolution_sla_met"] = t["resolution_outcome"].eq("Resolved within SLA")
     t["channel_group"] = np.where(t["channel"].isin(LIVE_CHANNELS), "Live (chat/phone)", "Async (email)")
-    t["created_dow"] = t["created_at"].dt.dayofweek + 1
+    t["created_dow"] = t["created_at"].dt.day_of_week + 1
     t["created_hour"] = t["created_at"].dt.hour
     t["created_date"] = t["created_at"].dt.floor("D")
     t["ticket_id"] = np.arange(100001, 100001 + len(t))
